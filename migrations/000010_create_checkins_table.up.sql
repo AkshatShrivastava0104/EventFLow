@@ -1,0 +1,6 @@
+-- CREATE TABLE IF NOT EXISTS checkins (
+--   id BIGSERIAL PRIMARY KEY,
+--   ticket_id BIGINT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+--   volunteer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+--   checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- );

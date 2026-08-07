@@ -1,0 +1,9 @@
+-- CREATE TABLE IF NOT EXISTS audit_logs (
+--   id BIGSERIAL PRIMARY KEY,
+--   user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+--   action TEXT NOT NULL,
+--   entity TEXT NOT NULL,
+--   entity_id TEXT NOT NULL,
+--   ip_address TEXT,
+--   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- );
