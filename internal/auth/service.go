@@ -11,7 +11,7 @@ import (
 
 type Service struct {
 	repo *Repository
-	cfg  *config.Config
+	cfg  *config.Config   
 }
 
 func NewService(repo *Repository, cfg *config.Config) *Service {
