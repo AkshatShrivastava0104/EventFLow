@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -58,4 +59,55 @@ func (r *Repository) GetUserByID(id int64) (*User, error) {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// Organization part-------
+
+func (r *Repository) CreateOrganization(
+	ctx context.Context,
+	name string,
+	description string,
+	ownerID int64,
+) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, err
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	var organizationID int64
+	err = tx.QueryRow(ctx, `
+    INSERT INTO organizations (owner_id, name, description, created_at, updated_at)
+    VALUES ($1, $2, $3, now(), now())
+    RETURNING id
+    `, ownerID, name, description).Scan(&organizationID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return 0, err
+	}
+
+	_, err = tx.Exec(ctx, `
+    INSERT INTO organization_members (organization_id, user_id, role, joined_at)
+    VALUES ($1, $2, $3, now())
+    `, organizationID, ownerID, "OWNER")
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return 0, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return 0, err
+	}
+
+	return organizationID, nil
 }
