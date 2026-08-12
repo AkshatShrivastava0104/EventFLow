@@ -1,8 +1,8 @@
--- CREATE TABLE IF NOT EXISTS registrations (
---   id BIGSERIAL PRIMARY KEY,
---   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
---   event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
---   status TEXT NOT NULL DEFAULT 'pending',
---   payment_status TEXT NOT NULL DEFAULT 'unpaid',
---   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
--- );
+CREATE TABLE IF NOT EXISTS registrations (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_id BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  payment_status TEXT NOT NULL DEFAULT 'unpaid',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

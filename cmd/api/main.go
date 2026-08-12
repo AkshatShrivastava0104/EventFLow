@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/database"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/router"
@@ -27,13 +26,7 @@ func main() {
 
 	fmt.Println("Database connection established successfully!")
 
-	authRepo := auth.NewRepository(db)
-	authService := auth.NewService(authRepo, cfg)
-	authHandler := auth.NewHandler(authService)
-
-	r := router.SetupRouter()
-
-auth.RegisterAuthRoutes(r, authHandler, auth.NewAuthMiddleware(cfg))
+	r := router.SetupRouter(db, cfg)
 
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)

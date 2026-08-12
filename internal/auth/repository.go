@@ -111,3 +111,62 @@ func (r *Repository) CreateOrganization(
 
 	return organizationID, nil
 }
+
+
+
+func (r *Repository) GetOrganizationsByUserID(
+	ctx context.Context,
+	userID int64,
+) ([]Organization, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			o.id,
+			o.owner_id,
+			o.name,
+			o.description,
+			o.created_at,
+			o.updated_at
+		FROM organizations o
+		INNER JOIN organization_members om
+			ON o.id = om.organization_id
+		WHERE om.user_id = $1
+		ORDER BY o.created_at DESC
+	`, userID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var organizations []Organization
+
+	for rows.Next() {
+
+		var org Organization
+
+		err := rows.Scan(
+			&org.ID,
+			&org.OwnerID,
+			&org.Name,
+			&org.Description,
+			&org.CreatedAt,
+			&org.UpdatedAt,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		organizations = append(organizations, org)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return organizations, nil
+}
