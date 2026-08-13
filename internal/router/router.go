@@ -43,6 +43,7 @@ package router
 import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -90,6 +91,18 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		organizationHandler,
 		authMiddleware,
 	)
+
+	
+
+
+	eventRepo := event.NewRepository(db)
+	eventService := event.NewService(eventRepo, organizationService)
+
+
+	eventHandler := event.NewHandler(eventService)
+
+	event.RegisterEventRoutes(api, eventHandler, authMiddleware)
+
 
 
 	r.GET("/health", func(c *gin.Context) {

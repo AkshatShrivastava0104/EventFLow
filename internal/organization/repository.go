@@ -2,6 +2,7 @@ package organization
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
@@ -129,4 +130,175 @@ func (r *Repository) GetMemberRole(
 	}
 
 	return role, nil
+}
+
+
+
+
+
+func (r *Repository) UpdateOrganization(
+	ctx context.Context,
+	organizationID int64,
+	name string,
+	description string,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE organizations
+		SET
+			name = $1,
+			description = $2,
+			updated_at = NOW()
+		WHERE id = $3
+	`,
+		name,
+		description,
+		organizationID,
+	)
+
+	return err
+}
+
+
+
+
+func (r *Repository) AddMember(
+	ctx context.Context,
+	organizationID int64,
+	userID int64,
+	role string,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO organization_members
+			(organization_id, user_id, role, joined_at)
+		VALUES
+			($1, $2, $3, NOW())
+	`,
+		organizationID,
+		userID,
+		role,
+	)
+
+	return err
+}
+
+
+
+func (r *Repository) GetMembers(
+	ctx context.Context,
+	organizationID int64,
+) ([]OrganizationMember, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := r.db.Query(ctx, `
+		SELECT
+			om.user_id,
+			u.name,
+			u.email,
+			om.role,
+			om.joined_at
+		FROM organization_members om
+		INNER JOIN users u
+			ON u.id = om.user_id
+		WHERE om.organization_id = $1
+		ORDER BY om.joined_at ASC
+	`, organizationID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []OrganizationMember
+
+	for rows.Next() {
+		var member OrganizationMember
+
+		err := rows.Scan(
+			&member.UserID,
+			&member.Name,
+			&member.Email,
+			&member.Role,
+			&member.JoinedAt,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		members = append(members, member)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return members, nil
+}
+
+
+
+
+
+func (r *Repository) UpdateMemberRole(
+	ctx context.Context,
+	organizationID int64,
+	userID int64,
+	role string,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.Exec(ctx, `
+		UPDATE organization_members
+		SET role = $1
+		WHERE organization_id = $2
+		  AND user_id = $3
+	`,
+		role,
+		organizationID,
+		userID,
+	)
+
+	return err
+}
+
+
+func (r *Repository) RemoveMember(
+	ctx context.Context,
+	organizationID int64,
+	userID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		DELETE FROM organization_members
+		WHERE organization_id = $1
+		  AND user_id = $2
+	`,
+		organizationID,
+		userID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New("member not found")
+	}
+
+	return nil
 }
