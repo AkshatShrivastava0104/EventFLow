@@ -218,3 +218,167 @@ func (s *Service) UpdateEvent(
 		req,
 	)
 }
+
+
+
+func (s *Service) DeleteEvent(
+	ctx context.Context,
+	eventID int64,
+	userID int64,
+) error {
+
+	// Get event first
+	event, err := s.repo.GetEventByID(ctx, eventID)
+	if err != nil {
+		return errors.New("event not found")
+	}
+
+	// Get user's role in the organization
+	role, err := s.organizationService.GetMemberRole(
+		ctx,
+		event.OrganizationID,
+		userID,
+	)
+
+	if err != nil {
+		return errors.New(
+			"you are not a member of this organization",
+		)
+	}
+
+	// Only OWNER can delete
+	if role != "OWNER" {
+		return errors.New(
+			"only owner can delete events",
+		)
+	}
+
+	// Don't delete already completed events
+	if event.Status == "completed" {
+		return errors.New(
+			"completed event cannot be deleted",
+		)
+	}
+
+	return s.repo.DeleteEvent(
+		ctx,
+		eventID,
+	)
+}
+
+
+
+func (s *Service) PublishEvent(
+	ctx context.Context,
+	eventID int64,
+	userID int64,
+) error {
+
+	// Get event
+	event, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
+
+	if err != nil {
+		return errors.New("event not found")
+	}
+
+	// Check organization role
+	role, err := s.organizationService.GetMemberRole(
+		ctx,
+		event.OrganizationID,
+		userID,
+	)
+
+	if err != nil {
+		return errors.New(
+			"you are not a member of this organization",
+		)
+	}
+
+	// Only OWNER / ADMIN can publish
+	if role != "OWNER" && role != "ADMIN" {
+		return errors.New(
+			"you do not have permission to publish this event",
+		)
+	}
+
+	// State machine validation
+	if event.Status != "draft" {
+		return errors.New(
+			"only draft events can be published",
+		)
+	}
+
+	// Publish
+	return s.repo.PublishEvent(
+		ctx,
+		eventID,
+	)
+}
+
+
+func (s *Service) CancelEvent(
+	ctx context.Context,
+	eventID int64,
+	userID int64,
+) error {
+
+	event, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
+
+	if err != nil {
+		return errors.New("event not found")
+	}
+
+	role, err := s.organizationService.GetMemberRole(
+		ctx,
+		event.OrganizationID,
+		userID,
+	)
+
+	if err != nil {
+		return errors.New(
+			"you are not a member of this organization",
+		)
+	}
+
+	// Only OWNER / ADMIN can cancel
+	if role != "OWNER" && role != "ADMIN" {
+		return errors.New(
+			"you do not have permission to cancel this event",
+		)
+	}
+
+	// Only draft or published events can be cancelled
+	if event.Status != "draft" &&
+		event.Status != "published" {
+
+		return errors.New(
+			"this event cannot be cancelled",
+		)
+	}
+
+	return s.repo.CancelEvent(
+		ctx,
+		eventID,
+	)
+}
+
+
+
+func (s *Service) GetEventForRegistration(
+	ctx context.Context,
+	eventID int64,
+) (*Event, error) {
+
+	return s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
+}
+
+

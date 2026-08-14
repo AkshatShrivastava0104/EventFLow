@@ -45,6 +45,8 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/waitlist"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -102,6 +104,48 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	eventHandler := event.NewHandler(eventService)
 
 	event.RegisterEventRoutes(api, eventHandler, authMiddleware)
+
+
+
+
+	registrationRepo := registration.NewRepository(db)
+
+	registrationService := registration.NewService(
+		registrationRepo,
+		eventService,
+		organizationService,
+	)
+
+	registrationHandler := registration.NewHandler(
+		registrationService,
+	)
+
+	registration.RegisterRegistrationRoutes(
+		api,
+		registrationHandler,
+		authMiddleware,
+	)
+
+
+
+
+	waitlistRepo := waitlist.NewRepository(db)
+
+	waitlistService := waitlist.NewService(
+		waitlistRepo,
+		eventService,
+		organizationService,
+	)
+
+	waitlistHandler := waitlist.NewHandler(
+		waitlistService,
+	)
+
+	waitlist.RegisterWaitlistRoutes(
+		api,
+		waitlistHandler,
+		authMiddleware,
+	)
 
 
 

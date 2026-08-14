@@ -19,4 +19,10 @@ func RegisterEventRoutes(
 	events.GET("/:id", handler.GetEventByID)
 
 	events.PATCH("/:id", handler.UpdateEvent)
+
+	events.DELETE("/:id", handler.DeleteEvent)
+
+	events.POST("/:id/publish", handler.PublishEvent)
+
+	events.POST("/:id/cancel", handler.CancelEvent)
 }

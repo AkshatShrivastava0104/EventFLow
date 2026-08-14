@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -219,4 +220,95 @@ func (r *Repository) UpdateEvent(
 	)
 
 	return err
+}
+
+
+
+func (r *Repository) DeleteEvent(
+	ctx context.Context,
+	eventID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		DELETE FROM events
+		WHERE id = $1
+	`, eventID)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New("event not found")
+	}
+
+	return nil
+}
+
+
+func (r *Repository) PublishEvent(
+	ctx context.Context,
+	eventID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		UPDATE events
+		SET
+			status = 'published',
+			updated_at = NOW()
+		WHERE id = $1
+		  AND status = 'draft'
+	`,
+		eventID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New(
+			"event not found or cannot be published",
+		)
+	}
+
+	return nil
+}
+
+
+
+func (r *Repository) CancelEvent(
+	ctx context.Context,
+	eventID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		UPDATE events
+		SET
+			status = 'cancelled',
+			updated_at = NOW()
+		WHERE id = $1
+		  AND status IN ('draft', 'published')
+	`,
+		eventID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New("event not found or cannot be cancelled")
+	}
+
+	return nil
 }

@@ -269,3 +269,185 @@ func (h *Handler) UpdateEvent(c *gin.Context) {
 		"message": "event updated successfully",
 	})
 }
+
+
+
+func (h *Handler) DeleteEvent(c *gin.Context) {
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	eventID, err := strconv.ParseInt(
+		c.Param("id"),
+		10,
+		64,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	err = h.service.DeleteEvent(
+		c.Request.Context(),
+		eventID,
+		userID,
+	)
+
+	if err != nil {
+
+		if strings.Contains(err.Error(), "only owner") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event deleted successfully",
+	})
+}
+
+
+
+func (h *Handler) PublishEvent(c *gin.Context) {
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	eventID, err := strconv.ParseInt(
+		c.Param("id"),
+		10,
+		64,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	err = h.service.PublishEvent(
+		c.Request.Context(),
+		eventID,
+		userID,
+	)
+
+	if err != nil {
+
+		if strings.Contains(err.Error(), "permission") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event published successfully",
+	})
+}
+
+
+func (h *Handler) CancelEvent(c *gin.Context) {
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	eventID, err := strconv.ParseInt(
+		c.Param("id"),
+		10,
+		64,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	err = h.service.CancelEvent(
+		c.Request.Context(),
+		eventID,
+		userID,
+	)
+
+	if err != nil {
+
+		if strings.Contains(err.Error(), "permission") {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event cancelled successfully",
+	})
+}
