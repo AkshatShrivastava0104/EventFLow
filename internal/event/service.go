@@ -382,3 +382,22 @@ func (s *Service) GetEventForRegistration(
 }
 
 
+
+func (s *Service) GetEventOrganizationID(
+	ctx context.Context,
+	eventID int64,
+) (int64, error) {
+
+	eventData, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return eventData.OrganizationID, nil
+}
+
+

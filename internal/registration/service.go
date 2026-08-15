@@ -34,40 +34,35 @@ func (s *Service) Register(
 	ctx context.Context,
 	eventID int64,
 	userID int64,
-) (int64, error) {
+) (*RegisterResult, error) {
 
-	// Get event
-	event, err := s.eventService.GetEventForRegistration(
+	eventData, err := s.eventService.GetEventForRegistration(
 		ctx,
 		eventID,
 	)
 
 	if err != nil {
-		return 0, errors.New("event not found")
+		return nil, errors.New("event not found")
 	}
 
-	// User must belong to event's organization
 	_, err = s.organizationService.GetMemberRole(
 		ctx,
-		event.OrganizationID,
+		eventData.OrganizationID,
 		userID,
 	)
 
 	if err != nil {
-		return 0, errors.New(
+		return nil, errors.New(
 			"you are not a member of this organization",
 		)
 	}
 
-	// Repository handles transaction,
-	// capacity and duplicate protection.
 	return s.repo.RegisterUser(
 		ctx,
 		eventID,
 		userID,
 	)
 }
-
 
 func (s *Service) GetMyRegistrations(
 	ctx context.Context,
@@ -79,6 +74,8 @@ func (s *Service) GetMyRegistrations(
 		userID,
 	)
 }
+
+
 
 
 func (s *Service) CancelRegistration(
@@ -97,7 +94,7 @@ func (s *Service) CancelRegistration(
 		return err
 	}
 
-	// Try to promote the next person.
+	// Try to promote the next person from this event's waitlist.
 	return s.waitlistService.PromoteNextUser(
 		ctx,
 		eventID,

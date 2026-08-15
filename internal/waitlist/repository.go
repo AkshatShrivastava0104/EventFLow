@@ -130,6 +130,7 @@ func (r *Repository) AddToWaitlist(
 
 
 
+
 func (r *Repository) PromoteNextUser(
 	ctx context.Context,
 	eventID int64,
@@ -137,23 +138,6 @@ func (r *Repository) PromoteNextUser(
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-
-	var eventIDLocked int64
-
-	err = tx.QueryRow(ctx, `
-		SELECT id
-		FROM events
-		WHERE id = $1
-		FOR UPDATE
-	`, eventID).Scan(&eventIDLocked)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("event not found")
-		}
-		return err
-}
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -164,7 +148,29 @@ func (r *Repository) PromoteNextUser(
 		_ = tx.Rollback(ctx)
 	}()
 
-	// Get the first person in the waitlist.
+	// --------------------------------------------------
+	// 1. Lock the event row
+	// --------------------------------------------------
+
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM events
+		WHERE id = $1
+		FOR UPDATE
+	`, eventID).Scan(&eventID)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("event not found")
+		}
+
+		return err
+	}
+
+	// --------------------------------------------------
+	// 2. Get the first user from waitlist
+	// --------------------------------------------------
+
 	var waitlistID int64
 	var userID int64
 
@@ -172,7 +178,7 @@ func (r *Repository) PromoteNextUser(
 		SELECT id, user_id
 		FROM waitlist
 		WHERE event_id = $1
-		ORDER BY position ASC
+		ORDER BY position ASC, created_at ASC
 		LIMIT 1
 		FOR UPDATE
 	`, eventID).Scan(
@@ -182,15 +188,18 @@ func (r *Repository) PromoteNextUser(
 
 	if err != nil {
 
+		// Nobody is waiting.
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Nobody is waiting.
 			return nil
 		}
 
 		return err
 	}
 
-	// Create registration for promoted user.
+	// --------------------------------------------------
+	// 3. Create registration
+	// --------------------------------------------------
+
 	_, err = tx.Exec(ctx, `
 		INSERT INTO registrations (
 			user_id,
@@ -215,7 +224,10 @@ func (r *Repository) PromoteNextUser(
 		return err
 	}
 
-	// Remove promoted user from waitlist.
+	// --------------------------------------------------
+	// 4. Remove user from waitlist
+	// --------------------------------------------------
+
 	_, err = tx.Exec(ctx, `
 		DELETE FROM waitlist
 		WHERE id = $1
@@ -225,18 +237,21 @@ func (r *Repository) PromoteNextUser(
 		return err
 	}
 
-	// Re-number remaining positions.
+	// --------------------------------------------------
+	// 5. Re-number remaining waitlist positions
+	// --------------------------------------------------
+
 	_, err = tx.Exec(ctx, `
 		WITH ordered AS (
 			SELECT
 				id,
 				ROW_NUMBER() OVER (
-					ORDER BY position ASC
+					ORDER BY position ASC, created_at ASC
 				) AS new_position
 			FROM waitlist
 			WHERE event_id = $1
 		)
-		UPDATE waitlist w
+		UPDATE waitlist AS w
 		SET position = ordered.new_position
 		FROM ordered
 		WHERE w.id = ordered.id
@@ -247,6 +262,10 @@ func (r *Repository) PromoteNextUser(
 	if err != nil {
 		return err
 	}
+
+	// --------------------------------------------------
+	// 6. Commit
+	// --------------------------------------------------
 
 	if err := tx.Commit(ctx); err != nil {
 		return err

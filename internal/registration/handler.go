@@ -52,8 +52,8 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
-	// Register user
-	registrationID, err := h.service.Register(
+	// Register / automatically waitlist
+	result, err := h.service.Register(
 		c.Request.Context(),
 		eventID,
 		userID,
@@ -81,7 +81,7 @@ func (h *Handler) Register(c *gin.Context) {
 			})
 			return
 
-		case "event is full":
+		case "user already on waitlist":
 			c.JSON(http.StatusConflict, gin.H{
 				"error": err.Error(),
 			})
@@ -101,9 +101,21 @@ func (h *Handler) Register(c *gin.Context) {
 		}
 	}
 
+	// Event was full → user was added to waitlist
+	if result.Status == "waitlisted" {
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message":     "event is full, added to waitlist",
+			"waitlist_id": *result.WaitlistID,
+		})
+
+		return
+	}
+
+	// Normal registration
 	c.JSON(http.StatusCreated, gin.H{
 		"message":         "registration created successfully",
-		"registration_id": registrationID,
+		"registration_id": *result.RegistrationID,
 	})
 }
 

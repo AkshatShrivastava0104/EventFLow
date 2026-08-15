@@ -42,10 +42,13 @@ package router
 
 import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
+	checkin "github.com/AkshatShrivastava0104/EventFlow/internal/check-in"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/notification"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/ticket"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/waitlist"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -108,27 +111,6 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 
 
 
-	registrationRepo := registration.NewRepository(db)
-
-	registrationService := registration.NewService(
-		registrationRepo,
-		eventService,
-		organizationService,
-	)
-
-	registrationHandler := registration.NewHandler(
-		registrationService,
-	)
-
-	registration.RegisterRegistrationRoutes(
-		api,
-		registrationHandler,
-		authMiddleware,
-	)
-
-
-
-
 	waitlistRepo := waitlist.NewRepository(db)
 
 	waitlistService := waitlist.NewService(
@@ -144,6 +126,77 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 	waitlist.RegisterWaitlistRoutes(
 		api,
 		waitlistHandler,
+		authMiddleware,
+	)
+
+
+	registrationRepo := registration.NewRepository(db)
+
+	registrationService := registration.NewService(
+		registrationRepo,
+		eventService,
+		organizationService,
+		waitlistService)
+
+	registrationHandler := registration.NewHandler(registrationService)
+
+	registration.RegisterRegistrationRoutes(api, registrationHandler,authMiddleware)
+
+	
+
+	ticketRepo := ticket.NewRepository(db)
+
+	ticketService := ticket.NewService(
+		ticketRepo,
+		registrationService,
+	)
+
+	ticketHandler := ticket.NewHandler(
+		ticketService,
+	)
+
+	ticket.RegisterTicketRoutes(
+		api,
+		ticketHandler,
+		authMiddleware,
+	)
+
+
+
+
+	checkinRepo := checkin.NewRepository(db)
+
+	checkinService := checkin.NewService(
+		checkinRepo,
+		eventService,
+		organizationService,
+	)
+
+	checkinHandler := checkin.NewHandler(
+		checkinService,
+	)
+
+	checkin.RegisterCheckinRoutes(
+		api,
+		checkinHandler,
+		authMiddleware,
+	)
+
+
+
+	notificationRepo := notification.NewRepository(db)
+
+	notificationService := notification.NewService(
+		notificationRepo,
+	)
+
+	notificationHandler := notification.NewHandler(
+		notificationService,
+	)
+
+	notification.RegisterNotificationRoutes(
+		api,
+		notificationHandler,
 		authMiddleware,
 	)
 

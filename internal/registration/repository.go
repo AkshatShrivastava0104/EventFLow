@@ -24,23 +24,24 @@ func (r *Repository) RegisterUser(
 	ctx context.Context,
 	eventID int64,
 	userID int64,
-) (int64, error) {
+) (*RegisterResult, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
 
-	// Lock the event row.
-	// This prevents concurrent registrations
-	// from exceeding the event capacity.
+	// --------------------------------------------------
+	// 1. Lock event
+	// --------------------------------------------------
+
 	var capacity *int
 	var status string
 
@@ -56,38 +57,69 @@ func (r *Repository) RegisterUser(
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return 0, errors.New("event not found")
+			return nil, errors.New("event not found")
 		}
 
-		return 0, err
+		return nil, err
 	}
 
-	// Event must be published
+	// --------------------------------------------------
+	// 2. Event must be published
+	// --------------------------------------------------
+
 	if status != "published" {
-		return 0, errors.New(
+		return nil, errors.New(
 			"registrations are only allowed for published events",
 		)
 	}
 
-	// Check whether user already registered
-	var existingID int64
+	// --------------------------------------------------
+	// 3. Check active registration
+	// --------------------------------------------------
+
+	var existingRegistrationID int64
 
 	err = tx.QueryRow(ctx, `
 		SELECT id
 		FROM registrations
 		WHERE user_id = $1
 		  AND event_id = $2
-	`, userID, eventID).Scan(&existingID)
+		  AND status != 'cancelled'
+	`, userID, eventID).Scan(&existingRegistrationID)
 
 	if err == nil {
-		return 0, errors.New("user already registered")
+		return nil, errors.New("user already registered")
 	}
 
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, err
+		return nil, err
 	}
 
-	// Check capacity
+	// --------------------------------------------------
+	// 4. Check existing waitlist entry
+	// --------------------------------------------------
+
+	var existingWaitlistID int64
+
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM waitlist
+		WHERE user_id = $1
+		  AND event_id = $2
+	`, userID, eventID).Scan(&existingWaitlistID)
+
+	if err == nil {
+		return nil, errors.New("user already on waitlist")
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	// --------------------------------------------------
+	// 5. Check capacity
+	// --------------------------------------------------
+
 	if capacity != nil {
 
 		var registeredCount int
@@ -100,15 +132,68 @@ func (r *Repository) RegisterUser(
 		`, eventID).Scan(&registeredCount)
 
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
+		// --------------------------------------------------
+		// 6. Event full → automatically waitlist user
+		// --------------------------------------------------
+
 		if registeredCount >= *capacity {
-			return 0, errors.New("event is full")
+
+			var position int
+
+			err = tx.QueryRow(ctx, `
+				SELECT COALESCE(MAX(position), 0) + 1
+				FROM waitlist
+				WHERE event_id = $1
+			`, eventID).Scan(&position)
+
+			if err != nil {
+				return nil, err
+			}
+
+			var waitlistID int64
+
+			err = tx.QueryRow(ctx, `
+				INSERT INTO waitlist (
+					user_id,
+					event_id,
+					position,
+					created_at
+				)
+				VALUES (
+					$1,
+					$2,
+					$3,
+					NOW()
+				)
+				RETURNING id
+			`,
+				userID,
+				eventID,
+				position,
+			).Scan(&waitlistID)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if err := tx.Commit(ctx); err != nil {
+				return nil, err
+			}
+
+			return &RegisterResult{
+				Status:     "waitlisted",
+				WaitlistID: &waitlistID,
+			}, nil
 		}
 	}
 
-	// Create registration
+	// --------------------------------------------------
+	// 7. Create registration
+	// --------------------------------------------------
+
 	var registrationID int64
 
 	err = tx.QueryRow(ctx, `
@@ -133,15 +218,29 @@ func (r *Repository) RegisterUser(
 	).Scan(&registrationID)
 
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
+
+	// --------------------------------------------------
+	// 8. Commit
+	// --------------------------------------------------
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return registrationID, nil
+	return &RegisterResult{
+		Status:         "registered",
+		RegistrationID: &registrationID,
+	}, nil
 }
+
+
+
+
+
+
+
 
 
 func (r *Repository) GetRegistrationsByUserID(
@@ -207,31 +306,34 @@ func (r *Repository) CancelRegistration(
 	ctx context.Context,
 	registrationID int64,
 	userID int64,
-) error {
+) (int64, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	result, err := r.db.Exec(ctx, `
+	var eventID int64
+
+	err := r.db.QueryRow(ctx, `
 		UPDATE registrations
 		SET status = 'cancelled'
 		WHERE id = $1
 		  AND user_id = $2
 		  AND status != 'cancelled'
+		RETURNING event_id
 	`,
 		registrationID,
 		userID,
-	)
+	).Scan(&eventID)
 
 	if err != nil {
-		return err
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, errors.New(
+				"registration not found or already cancelled",
+			)
+		}
+
+		return 0, err
 	}
 
-	if result.RowsAffected() == 0 {
-		return errors.New(
-			"registration not found or already cancelled",
-		)
-	}
-
-	return nil
+	return eventID, nil
 }
