@@ -47,14 +47,16 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/notification"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/ticket"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/waitlist"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
-func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
+func SetupRouter(db *pgxpool.Pool, cfg *config.Config, redisClient *redis.Client) *gin.Engine {
 
 	r := gin.New()
 
@@ -132,11 +134,15 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 
 	registrationRepo := registration.NewRepository(db)
 
+	notificationQueue := queue.NewNotificationQueue(redisClient)
+
 	registrationService := registration.NewService(
 		registrationRepo,
 		eventService,
 		organizationService,
-		waitlistService)
+		waitlistService,
+		notificationQueue,
+	)
 
 	registrationHandler := registration.NewHandler(registrationService)
 
@@ -200,6 +206,9 @@ func SetupRouter(db *pgxpool.Pool, cfg *config.Config) *gin.Engine {
 		authMiddleware,
 	)
 
+
+
+	
 
 
 	r.GET("/health", func(c *gin.Context) {

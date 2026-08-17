@@ -6,6 +6,7 @@ import (
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/waitlist"
 )
 
@@ -14,6 +15,7 @@ type Service struct {
 	eventService        *event.Service
 	organizationService *organization.Service
 	waitlistService     *waitlist.Service
+	notificationQueue    *queue.NotificationQueue
 }
 
 func NewService(
@@ -21,12 +23,14 @@ func NewService(
 	eventService *event.Service,
 	organizationService *organization.Service,
 	waitlistService *waitlist.Service,
+	notificationQueue *queue.NotificationQueue,
 ) *Service {
 	return &Service{
 		repo:                repo,
 		eventService:        eventService,
 		organizationService: organizationService,
 		waitlistService:     waitlistService,
+		notificationQueue:   notificationQueue,
 	}
 }
 
@@ -40,7 +44,6 @@ func (s *Service) Register(
 		ctx,
 		eventID,
 	)
-
 	if err != nil {
 		return nil, errors.New("event not found")
 	}
@@ -50,18 +53,54 @@ func (s *Service) Register(
 		eventData.OrganizationID,
 		userID,
 	)
-
 	if err != nil {
 		return nil, errors.New(
 			"you are not a member of this organization",
 		)
 	}
 
-	return s.repo.RegisterUser(
+	result, err := s.repo.RegisterUser(
 		ctx,
 		eventID,
 		userID,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// Registration succeeded
+	if result.Status == "registered" {
+		err := s.notificationQueue.Enqueue(
+			ctx,
+			queue.NotificationJob{
+				UserID: userID,
+				Type:   "REGISTRATION_CREATED",
+				Message: "Your registration was created successfully.",
+			},
+		)
+		if err != nil {
+			// Registration is already committed.
+			// Log/handle queue failure separately.
+			return result, err
+		}
+	}
+
+	// User was added to waitlist
+	if result.Status == "waitlisted" {
+		err := s.notificationQueue.Enqueue(
+			ctx,
+			queue.NotificationJob{
+				UserID: userID,
+				Type:   "WAITLISTED",
+				Message: "The event is full. You have been added to the waitlist.",
+			},
+		)
+		if err != nil {
+			return result, err
+		}
+	}
+
+	return result, nil
 }
 
 func (s *Service) GetMyRegistrations(
