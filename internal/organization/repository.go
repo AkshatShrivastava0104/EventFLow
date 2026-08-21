@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -298,6 +299,34 @@ func (r *Repository) RemoveMember(
 
 	if result.RowsAffected() == 0 {
 		return errors.New("member not found")
+	}
+
+	return nil
+}
+
+
+
+func (r *Repository) DeleteOrganization(
+	ctx context.Context,
+	organizationID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		DELETE FROM organizations
+		WHERE id = $1
+	`,
+		organizationID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return apperrors.ErrOrganizationNotFound
 	}
 
 	return nil

@@ -2,8 +2,8 @@ package checkin
 
 import (
 	"context"
-	"errors"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
 )
@@ -41,7 +41,7 @@ func (s *Service) CheckIn(
 	)
 
 	if err != nil {
-		return 0, errors.New("event not found")
+		return 0, apperrors.ErrEventNotFound
 	}
 
 	role, err := s.organizationService.GetMemberRole(
@@ -51,18 +51,14 @@ func (s *Service) CheckIn(
 	)
 
 	if err != nil {
-		return 0, errors.New(
-			"you are not a member of this organization",
-		)
+		return 0, apperrors.ErrForbidden
 	}
 
 	if role != "OWNER" &&
 		role != "ADMIN" &&
 		role != "VOLUNTEER" {
 
-		return 0, errors.New(
-			"you do not have permission to check in attendees",
-		)
+		return 0, apperrors.ErrForbidden
 	}
 
 	return s.repo.CheckIn(

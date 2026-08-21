@@ -64,10 +64,26 @@ func (r *Repository) CreateNotification(
 func (r *Repository) GetUserNotifications(
 	ctx context.Context,
 	userID int64,
-) ([]Notification, error) {
+	page int,
+	limit int,
+) ([]Notification, int, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	offset := (page - 1) * limit
+
+	var total int
+
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM notifications
+		WHERE user_id = $1
+	`, userID).Scan(&total)
+
+	if err != nil {
+		return nil, 0, err
+	}
 
 	rows, err := r.db.Query(ctx, `
 		SELECT
@@ -80,10 +96,16 @@ func (r *Repository) GetUserNotifications(
 		FROM notifications
 		WHERE user_id = $1
 		ORDER BY created_at DESC
-	`, userID)
+		LIMIT $2
+		OFFSET $3
+	`,
+		userID,
+		limit,
+		offset,
+	)
 
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -103,7 +125,7 @@ func (r *Repository) GetUserNotifications(
 		)
 
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		notifications = append(
@@ -113,10 +135,10 @@ func (r *Repository) GetUserNotifications(
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return notifications, nil
+	return notifications, total, nil
 }
 
 // MarkNotificationAsRead marks a notification as read.

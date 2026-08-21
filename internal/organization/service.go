@@ -6,37 +6,78 @@ import (
 
 	"strings"
 
-	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/auditlog"
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 )
 
 
 type Service struct {
 	repo *Repository
+	auditService *auditlog.Service
 }
 
-func NewService(repo *Repository) *Service {
+func NewService(repo *Repository, auditService *auditlog.Service) *Service {
 	return &Service{
 		repo: repo,
+		auditService: auditService,
 	}
+	
 }
 
 func (s *Service) CreateOrganization(
 	ctx context.Context,
-	req auth.CreateOrganizationRequest,
+	name string,
+	description string,
 	ownerID int64,
 ) (int64, error) {
 
-	if req.Name == "" {
-		return 0, errors.New("organization name is required")
+	name = strings.TrimSpace(name)
+	description = strings.TrimSpace(description)
+
+	// Validate organization data.
+	if name == "" {
+		return 0, apperrors.ErrInvalidInput
 	}
 
-	return s.repo.CreateOrganization(
+	if len(name) > 100 {
+		return 0, apperrors.ErrInvalidInput
+	}
+
+	if len(description) > 500 {
+		return 0, apperrors.ErrInvalidInput
+	}
+
+	// Create organization.
+	organizationID, err := s.repo.CreateOrganization(
 		ctx,
-		req.Name,
-		req.Description,
+		name,
+		description,
 		ownerID,
 	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	// Audit log.
+	err = s.auditService.Log(
+		ctx,
+		&ownerID,
+		"CREATE_ORGANIZATION",
+		"organization",
+		organizationID,
+		nil,
+	)
+
+	if err != nil {
+		return organizationID, err
+	}
+
+	return organizationID, nil
 }
+
+
+
 
 func (s *Service) GetOrganizations(
 	ctx context.Context,
@@ -92,44 +133,65 @@ func (s *Service) UpdateOrganization(
 	req UpdateOrganizationRequest,
 ) error {
 
-	// 1. Check whether user has permission
-	canManage, err := s.CanManageOrganization(
+	// Check user's role in the organization.
+	role, err := s.repo.GetMemberRole(
 		ctx,
 		organizationID,
 		userID,
 	)
 
 	if err != nil {
-		return err
+		return apperrors.ErrForbidden
 	}
 
-	if !canManage {
-		return errors.New("permission denied")
+	// Only OWNER and ADMIN can update organization.
+	if role != "OWNER" && role != "ADMIN" {
+		return apperrors.ErrForbidden
 	}
 
+	// Validate name.
 	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Name == "" {
-		return errors.New("organization name is required")
+		return apperrors.ErrInvalidInput
 	}
 
 	if len(req.Name) > 100 {
-		return errors.New("organization name cannot exceed 100 characters")
+		return apperrors.ErrInvalidInput
 	}
 
 	if len(req.Description) > 500 {
-		return errors.New("description cannot exceed 500 characters")
+		return apperrors.ErrInvalidInput
 	}
 
-	// 3. Update database
-	return s.repo.UpdateOrganization(
+	// Update organization.
+	err = s.repo.UpdateOrganization(
 		ctx,
 		organizationID,
 		req.Name,
 		req.Description,
 	)
-}
 
+	if err != nil {
+		return err
+	}
+
+	// Audit log.
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"UPDATE_ORGANIZATION",
+		"organization",
+		organizationID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 
 
@@ -140,19 +202,20 @@ func (s *Service) AddMember(
 	req AddMemberRequest,
 ) error {
 
-	// Only OWNER/ADMIN can add members
-	canManage, err := s.CanManageOrganization(
+	// Check requesting user's role
+	role, err := s.repo.GetMemberRole(
 		ctx,
 		organizationID,
 		requestingUserID,
 	)
 
 	if err != nil {
-		return err
+		return apperrors.ErrForbidden
 	}
 
-	if !canManage {
-		return errors.New("permission denied")
+	// Only OWNER and ADMIN can add members
+	if role != "OWNER" && role != "ADMIN" {
+		return apperrors.ErrForbidden
 	}
 
 	// Validate role
@@ -160,16 +223,36 @@ func (s *Service) AddMember(
 	case "ADMIN", "MEMBER", "VOLUNTEER":
 		// valid
 	default:
-		return errors.New("invalid role")
+		return apperrors.ErrInvalidInput
 	}
 
 	// Add member
-	return s.repo.AddMember(
+	err = s.repo.AddMember(
 		ctx,
 		organizationID,
 		req.UserID,
 		req.Role,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	// Audit log
+	err = s.auditService.Log(
+		ctx,
+		&requestingUserID,
+		"ADD_MEMBER",
+		"organization_member",
+		req.UserID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 
@@ -208,7 +291,7 @@ func (s *Service) UpdateMemberRole(
 	newRole string,
 ) error {
 
-	// Only OWNER can change roles
+	// Only OWNER can change member roles.
 	role, err := s.repo.GetMemberRole(
 		ctx,
 		organizationID,
@@ -216,22 +299,22 @@ func (s *Service) UpdateMemberRole(
 	)
 
 	if err != nil {
-		return errors.New("you are not a member of this organization")
+		return apperrors.ErrForbidden
 	}
 
 	if role != "OWNER" {
-		return errors.New("only owner can change member roles")
+		return apperrors.ErrForbidden
 	}
 
-	// Validate new role
+	// Validate new role.
 	switch newRole {
 	case "ADMIN", "MEMBER", "VOLUNTEER":
 		// valid
 	default:
-		return errors.New("invalid role")
+		return apperrors.ErrInvalidInput
 	}
 
-	// Prevent changing owner's role through this API
+	// Get target member's current role.
 	targetRole, err := s.repo.GetMemberRole(
 		ctx,
 		organizationID,
@@ -239,19 +322,41 @@ func (s *Service) UpdateMemberRole(
 	)
 
 	if err != nil {
-		return errors.New("target user is not a member")
+		return apperrors.ErrNotFound
 	}
 
+	// OWNER cannot be changed through this endpoint.
 	if targetRole == "OWNER" {
-		return errors.New("owner role cannot be changed")
+		return apperrors.ErrForbidden
 	}
 
-	return s.repo.UpdateMemberRole(
+	// Update role.
+	err = s.repo.UpdateMemberRole(
 		ctx,
 		organizationID,
 		targetUserID,
 		newRole,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	// Audit log.
+	err = s.auditService.Log(
+		ctx,
+		&requestingUserID,
+		"CHANGE_MEMBER_ROLE",
+		"organization_member",
+		targetUserID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 
@@ -271,15 +376,15 @@ func (s *Service) RemoveMember(
 	)
 
 	if err != nil {
-		return errors.New("you are not a member of this organization")
+		return apperrors.ErrForbidden
 	}
 
 	// Only OWNER can remove members
 	if role != "OWNER" {
-		return errors.New("only owner can remove members")
+		return apperrors.ErrForbidden
 	}
 
-	// Check target user's role
+	// Check target member
 	targetRole, err := s.repo.GetMemberRole(
 		ctx,
 		organizationID,
@@ -287,19 +392,40 @@ func (s *Service) RemoveMember(
 	)
 
 	if err != nil {
-		return errors.New("target user is not a member")
+		return apperrors.ErrNotFound
 	}
 
-	// Never remove OWNER through this API
+	// OWNER cannot remove OWNER
 	if targetRole == "OWNER" {
-		return errors.New("owner cannot be removed")
+		return apperrors.ErrForbidden
 	}
 
-	return s.repo.RemoveMember(
+	// Remove member
+	err = s.repo.RemoveMember(
 		ctx,
 		organizationID,
 		targetUserID,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	// Audit log
+	err = s.auditService.Log(
+		ctx,
+		&requestingUserID,
+		"REMOVE_MEMBER",
+		"organization_member",
+		targetUserID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 
@@ -320,4 +446,55 @@ func (s *Service) GetMemberRole(
 		organizationID,
 		userID,
 	)
+}
+
+
+
+func (s *Service) DeleteOrganization(
+	ctx context.Context,
+	organizationID int64,
+	userID int64,
+) error {
+
+	// Check current user's role
+	role, err := s.repo.GetMemberRole(
+		ctx,
+		organizationID,
+		userID,
+	)
+
+	if err != nil {
+		return apperrors.ErrOrganizationNotFound
+	}
+
+	// Only OWNER can delete organization
+	if role != "OWNER" {
+		return apperrors.ErrForbidden
+	}
+
+	// Delete organization
+	err = s.repo.DeleteOrganization(
+		ctx,
+		organizationID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	// Audit log
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"DELETE_ORGANIZATION",
+		"organization",
+		organizationID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

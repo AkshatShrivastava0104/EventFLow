@@ -1,9 +1,11 @@
 package waitlist
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,38 +63,31 @@ func (h *Handler) JoinWaitlist(c *gin.Context) {
 
 	if err != nil {
 
-		switch err.Error() {
-
-		case "event not found":
+		if errors.Is(err, apperrors.ErrEventNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "you are not a member of this organization":
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "only published events can have a waitlist":
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "user is already registered for this event":
-			c.JSON(http.StatusConflict, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
+				"error": "event not found",
 			})
 			return
 		}
+
+		if errors.Is(err, apperrors.ErrEventNotPublished) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "only published events can have a waitlist",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrConflict) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "user is already registered or already on the waitlist",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

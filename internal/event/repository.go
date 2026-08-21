@@ -3,18 +3,27 @@ package event
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository struct {
-	db *pgxpool.Pool
+	db         *pgxpool.Pool
+	outboxRepo *outbox.Repository
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
+func NewRepository(
+	db *pgxpool.Pool,
+	outboxRepo *outbox.Repository,
+) *Repository {
 	return &Repository{
-		db: db,
+		db:         db,
+		outboxRepo: outboxRepo,
 	}
 }
 
@@ -72,10 +81,26 @@ func (r *Repository) CreateEvent(
 func (r *Repository) GetEventsByOrganizationID(
 	ctx context.Context,
 	organizationID int64,
-) ([]Event, error) {
+	page int,
+	limit int,
+) ([]Event, int, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	offset := (page - 1) * limit
+
+	var total int
+
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM events
+		WHERE organization_id = $1
+	`, organizationID).Scan(&total)
+
+	if err != nil {
+		return nil, 0, err
+	}
 
 	rows, err := r.db.Query(ctx, `
 		SELECT
@@ -94,10 +119,16 @@ func (r *Repository) GetEventsByOrganizationID(
 		FROM events
 		WHERE organization_id = $1
 		ORDER BY created_at DESC
-	`, organizationID)
+		LIMIT $2
+		OFFSET $3
+	`,
+		organizationID,
+		limit,
+		offset,
+	)
 
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 
@@ -123,17 +154,17 @@ func (r *Repository) GetEventsByOrganizationID(
 		)
 
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		events = append(events, event)
 	}
 
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return events, nil
+	return events, total, nil
 }
 
 
@@ -291,7 +322,17 @@ func (r *Repository) CancelEvent(
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	result, err := r.db.Exec(ctx, `
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	// Lock event and cancel it.
+	result, err := tx.Exec(ctx, `
 		UPDATE events
 		SET
 			status = 'cancelled',
@@ -307,8 +348,141 @@ func (r *Repository) CancelEvent(
 	}
 
 	if result.RowsAffected() == 0 {
-		return errors.New("event not found or cannot be cancelled")
+		return apperrors.ErrInvalidInput
+	}
+
+	// Find all active attendees.
+	rows, err := tx.Query(ctx, `
+		SELECT user_id
+		FROM registrations
+		WHERE event_id = $1
+		  AND status != 'cancelled'
+	`,
+		eventID,
+	)
+
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+
+	for rows.Next() {
+
+		var userID int64
+
+		if err := rows.Scan(&userID); err != nil {
+			return err
+		}
+
+		userIDs = append(userIDs, userID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Create one outbox event per attendee.
+	for _, userID := range userIDs {
+
+		_, err := r.outboxRepo.Create(
+			ctx,
+			tx,
+			"NOTIFICATION",
+			"event",
+			strconv.FormatInt(eventID, 10),
+			map[string]interface{}{
+				"user_id": userID,
+				"type":    "EVENT_CANCELLED",
+				"message": "The event you registered for has been cancelled.",
+			},
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return err
 	}
 
 	return nil
+}
+
+
+func (r *Repository) CompleteEvent(
+	ctx context.Context,
+	eventID int64,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		UPDATE events
+		SET
+			status = 'completed',
+			updated_at = NOW()
+		WHERE id = $1
+		  AND status = 'published'
+	`,
+		eventID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New(
+			"event not found or cannot be completed",
+		)
+	}
+
+	return nil
+}
+
+
+
+func (r *Repository) GetActiveRegistrantUserIDs(
+	ctx context.Context,
+	eventID int64,
+) ([]int64, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := r.db.Query(ctx, `
+		SELECT user_id
+		FROM registrations
+		WHERE event_id = $1
+		  AND status != 'cancelled'
+		ORDER BY created_at ASC
+	`, eventID)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var userIDs []int64
+
+	for rows.Next() {
+
+		var userID int64
+
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+
+		userIDs = append(userIDs, userID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return userIDs, nil
 }

@@ -30,12 +30,36 @@ func (s *Service) CreateNotification(
 func (s *Service) GetUserNotifications(
 	ctx context.Context,
 	userID int64,
-) ([]Notification, error) {
+	page int,
+	limit int,
+) (*PaginatedNotifications, error) {
 
-	return s.repo.GetUserNotifications(
+	notifications, total, err := s.repo.GetUserNotifications(
 		ctx,
 		userID,
+		page,
+		limit,
 	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := 0
+
+	if total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	return &PaginatedNotifications{
+		Notifications: notifications,
+		Pagination: Pagination{
+			Page:       page,
+			Limit:      limit,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}, nil
 }
 
 func (s *Service) MarkNotificationAsRead(

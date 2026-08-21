@@ -4,16 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"time"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
 )
 
 type Service struct {
-	repo               *Repository
-	registrationService *registration.Service
+	repo                 *Repository
+	registrationService  *registration.Service
 }
 
 func NewService(
@@ -26,15 +26,59 @@ func NewService(
 	}
 }
 
+
 func (s *Service) CreateTicket(
 	ctx context.Context,
 	registrationID int64,
 	userID int64,
 ) (int64, error) {
 
-	// Get user's registrations.
 	registrations, err := s.registrationService.GetMyRegistrations(
 		ctx,
+		userID,
+		1,
+		100,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	var registrationFound bool
+	var registrationStatus string
+
+	for _, registration := range registrations.Registrations {
+
+		if registration.ID == registrationID {
+			registrationFound = true
+			registrationStatus = registration.Status
+			break
+		}
+	}
+
+	if !registrationFound {
+		return 0, apperrors.ErrRegistrationNotFound
+	}
+
+	if registrationStatus == "cancelled" {
+		return 0, apperrors.ErrInvalidInput
+	}
+
+	ticketNumber, err := generateTicketNumber()
+	if err != nil {
+		return 0, err
+	}
+
+	qrCode := fmt.Sprintf(
+		"eventflow:ticket:%d",
+		registrationID,
+	)
+
+	ticketID, err := s.repo.CreateTicket(
+		ctx,
+		registrationID,
+		ticketNumber,
+		qrCode,
 		userID,
 	)
 
@@ -42,47 +86,15 @@ func (s *Service) CreateTicket(
 		return 0, err
 	}
 
-	var registrationExists bool
-	var registrationStatus string
-
-	for _, r := range registrations {
-		if r.ID == registrationID {
-			registrationExists = true
-			registrationStatus = r.Status
-			break
-		}
-	}
-
-	if !registrationExists {
-		return 0, errors.New("registration not found")
-	}
-
-	if registrationStatus == "cancelled" {
-		return 0, errors.New(
-			"cancelled registration cannot have a ticket",
-		)
-	}
-
-	// Generate unique ticket number.
-	ticketNumber, err := generateTicketNumber()
-	if err != nil {
-		return 0, err
-	}
-
-	// QR code data.
-	// Later we can convert this data into an actual QR image.
-	qrCode := fmt.Sprintf(
-		"eventflow:ticket:%d",
-		registrationID,
-	)
-
-	return s.repo.CreateTicket(
-		ctx,
-		registrationID,
-		ticketNumber,
-		qrCode,
-	)
+	return ticketID, nil
 }
+
+
+
+
+
+
+
 
 func generateTicketNumber() (string, error) {
 

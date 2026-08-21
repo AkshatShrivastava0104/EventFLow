@@ -3,21 +3,32 @@ package waitlist
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository struct {
-	db *pgxpool.Pool
+	db         *pgxpool.Pool
+	outboxRepo *outbox.Repository
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
+func NewRepository(
+	db *pgxpool.Pool,
+	outboxRepo *outbox.Repository,
+) *Repository {
 	return &Repository{
-		db: db,
+		db:         db,
+		outboxRepo: outboxRepo,
 	}
 }
+
+
 
 func (r *Repository) AddToWaitlist(
 	ctx context.Context,
@@ -27,8 +38,6 @@ func (r *Repository) AddToWaitlist(
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-
-
 
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
@@ -60,9 +69,7 @@ func (r *Repository) AddToWaitlist(
 	}
 
 	if status != "published" {
-		return 0, errors.New(
-			"only published events can have a waitlist",
-		)
+		return 0, apperrors.ErrEventNotPublished
 	}
 
 	// Check whether user is already registered.
@@ -77,13 +84,11 @@ func (r *Repository) AddToWaitlist(
 	`, userID, eventID).Scan(&registrationID)
 
 	if err == nil {
-		return 0, errors.New(
-			"user is already registered for this event",
-		)
+		return 0, apperrors.ErrConflict
 	}
 
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return 0, err
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, apperrors.ErrEventNotFound
 	}
 
 	// Get next position.
@@ -118,6 +123,10 @@ func (r *Repository) AddToWaitlist(
 	).Scan(&waitlistID)
 
 	if err != nil {
+	if isUniqueViolation(err) {
+		return 0, apperrors.ErrAlreadyWaitlisted
+	}
+
 		return 0, err
 	}
 
@@ -134,14 +143,14 @@ func (r *Repository) AddToWaitlist(
 func (r *Repository) PromoteNextUser(
 	ctx context.Context,
 	eventID int64,
-) error {
+) (int64, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	defer func() {
@@ -149,33 +158,66 @@ func (r *Repository) PromoteNextUser(
 	}()
 
 	// --------------------------------------------------
-	// 1. Lock the event row
+	// 1. Lock event row
 	// --------------------------------------------------
 
+	var capacity *int
+
 	err = tx.QueryRow(ctx, `
-		SELECT id
+		SELECT capacity
 		FROM events
 		WHERE id = $1
 		FOR UPDATE
-	`, eventID).Scan(&eventID)
+	`, eventID).Scan(&capacity)
 
 	if err != nil {
+
 		if errors.Is(err, pgx.ErrNoRows) {
-			return errors.New("event not found")
+			return 0, apperrors.ErrEventNotFound
 		}
 
-		return err
+		return 0, err
 	}
 
 	// --------------------------------------------------
-	// 2. Get the first user from waitlist
+	// 2. Check active registrations
+	// --------------------------------------------------
+
+	var activeRegistrations int
+
+	err = tx.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM registrations
+		WHERE event_id = $1
+		  AND status != 'cancelled'
+	`, eventID).Scan(&activeRegistrations)
+
+	if err != nil {
+		return 0, err
+	}
+
+	// Event is already full.
+	if capacity != nil &&
+		activeRegistrations >= *capacity {
+
+		if err := tx.Commit(ctx); err != nil {
+			return 0, err
+		}
+
+		return 0, nil
+	}
+
+	// --------------------------------------------------
+	// 3. Get first waitlisted user
 	// --------------------------------------------------
 
 	var waitlistID int64
 	var userID int64
 
 	err = tx.QueryRow(ctx, `
-		SELECT id, user_id
+		SELECT
+			id,
+			user_id
 		FROM waitlist
 		WHERE event_id = $1
 		ORDER BY position ASC, created_at ASC
@@ -188,19 +230,65 @@ func (r *Repository) PromoteNextUser(
 
 	if err != nil {
 
-		// Nobody is waiting.
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
+
+			if err := tx.Commit(ctx); err != nil {
+				return 0, err
+			}
+
+			return 0, nil
 		}
 
-		return err
+		return 0, err
 	}
 
 	// --------------------------------------------------
-	// 3. Create registration
+	// 4. Make sure user doesn't already have registration
 	// --------------------------------------------------
 
-	_, err = tx.Exec(ctx, `
+	var existingRegistrationID int64
+
+	err = tx.QueryRow(ctx, `
+		SELECT id
+		FROM registrations
+		WHERE user_id = $1
+		  AND event_id = $2
+		  AND status != 'cancelled'
+	`,
+		userID,
+		eventID,
+	).Scan(&existingRegistrationID)
+
+	if err == nil {
+
+		// Remove stale waitlist entry.
+		_, err = tx.Exec(ctx, `
+			DELETE FROM waitlist
+			WHERE id = $1
+		`, waitlistID)
+
+		if err != nil {
+			return 0, err
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return 0, err
+		}
+
+		return 0, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, err
+	}
+
+	// --------------------------------------------------
+	// 5. Create registration
+	// --------------------------------------------------
+
+	var registrationID int64
+
+	err = tx.QueryRow(ctx, `
 		INSERT INTO registrations (
 			user_id,
 			event_id,
@@ -215,17 +303,18 @@ func (r *Repository) PromoteNextUser(
 			'unpaid',
 			NOW()
 		)
+		RETURNING id
 	`,
 		userID,
 		eventID,
-	)
+	).Scan(&registrationID)
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// --------------------------------------------------
-	// 4. Remove user from waitlist
+	// 6. Remove user from waitlist
 	// --------------------------------------------------
 
 	_, err = tx.Exec(ctx, `
@@ -234,11 +323,11 @@ func (r *Repository) PromoteNextUser(
 	`, waitlistID)
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// --------------------------------------------------
-	// 5. Re-number remaining waitlist positions
+	// 7. Re-number remaining waitlist
 	// --------------------------------------------------
 
 	_, err = tx.Exec(ctx, `
@@ -260,16 +349,50 @@ func (r *Repository) PromoteNextUser(
 	)
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// --------------------------------------------------
-	// 6. Commit
+	// 8. Create outbox notification
+	// --------------------------------------------------
+
+	_, err = r.outboxRepo.Create(
+		ctx,
+		tx,
+		"NOTIFICATION",
+		"registration",
+		strconv.FormatInt(registrationID, 10),
+		map[string]interface{}{
+			"user_id": userID,
+			"type":    "WAITLIST_PROMOTED",
+			"message": "You have been promoted from the waitlist and registered for the event.",
+		},
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	// --------------------------------------------------
+	// 9. Commit everything atomically
 	// --------------------------------------------------
 
 	if err := tx.Commit(ctx); err != nil {
-		return err
+		return 0, err
 	}
 
-	return nil
+	return userID, nil
+}
+
+
+
+func isUniqueViolation(err error) bool {
+
+	var pgErr *pgconn.PgError
+
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "23505"
+	}
+
+	return false
 }

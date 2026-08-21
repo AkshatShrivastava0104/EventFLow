@@ -28,6 +28,8 @@ func RegisterOrganizationRoutes(
 	organizations.PATCH("/:id/members/:userId", handler.UpdateMemberRole)
 
 	organizations.DELETE("/:id/members/:userId", handler.RemoveMember)
+
+	organizations.DELETE("/:id", handler.DeleteOrganization)
 }
 
 

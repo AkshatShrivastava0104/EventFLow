@@ -18,4 +18,6 @@ func RegisterRegistrationRoutes(
 	events.Use(authMiddleware)
 
 	events.POST("/:id/register", handler.Register)
+
+	events.GET("/:id/registrations", handler.GetEventRegistrations)
 }

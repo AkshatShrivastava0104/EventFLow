@@ -25,4 +25,6 @@ func RegisterEventRoutes(
 	events.POST("/:id/publish", handler.PublishEvent)
 
 	events.POST("/:id/cancel", handler.CancelEvent)
+
+	events.POST("/:id/complete", handler.CompleteEvent)
 }

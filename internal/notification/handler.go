@@ -37,22 +37,53 @@ func (h *Handler) GetMyNotifications(c *gin.Context) {
 		return
 	}
 
-	notifications, err := h.service.GetUserNotifications(
+	page := 1
+	limit := 20
+
+	var err error
+
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+
+		if err != nil || page < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid page",
+			})
+			return
+		}
+	}
+
+	if value := c.Query("limit"); value != "" {
+		limit, err = strconv.Atoi(value)
+
+		if err != nil || limit < 1 || limit > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "limit must be between 1 and 100",
+			})
+			return
+		}
+	}
+
+	result, err := h.service.GetUserNotifications(
 		c.Request.Context(),
 		userID,
+		page,
+		limit,
 	)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+			"error": "internal server error",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"notifications": notifications,
-	})
+	c.JSON(http.StatusOK, result)
 }
+
+
+
+
 
 func (h *Handler) MarkAsRead(c *gin.Context) {
 

@@ -5,23 +5,34 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/AkshatShrivastava0104/EventFlow/internal/auditlog"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
+
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 )
 
 type Service struct {
 	repo               *Repository
 	organizationService *organization.Service
+	notificationQueue   *queue.NotificationQueue
+	auditService       *auditlog.Service
 }
 
 func NewService(
 	repo *Repository,
 	organizationService *organization.Service,
+	notificationQueue *queue.NotificationQueue,
+	auditService *auditlog.Service,
 ) *Service {
 	return &Service{
-		repo:                repo,
+		repo:               repo,
 		organizationService: organizationService,
+		notificationQueue:   notificationQueue,
+		auditService:       auditService,
 	}
 }
+
 
 func (s *Service) CreateEvent(
 	ctx context.Context,
@@ -30,7 +41,6 @@ func (s *Service) CreateEvent(
 	req CreateEventRequest,
 ) (int64, error) {
 
-	// Check user's organization role
 	role, err := s.organizationService.GetMemberRole(
 		ctx,
 		organizationID,
@@ -38,49 +48,35 @@ func (s *Service) CreateEvent(
 	)
 
 	if err != nil {
-		return 0, errors.New(
-			"you are not a member of this organization",
-		)
+		return 0, apperrors.ErrForbidden
 	}
 
-	// Only OWNER and ADMIN can create events
 	if role != "OWNER" && role != "ADMIN" {
-		return 0, errors.New(
-			"you do not have permission to create events",
-		)
+		return 0, apperrors.ErrForbidden
 	}
 
-	// Validate title
 	req.Title = strings.TrimSpace(req.Title)
 
 	if req.Title == "" {
-		return 0, errors.New("event title is required")
+		return 0, apperrors.ErrInvalidInput
 	}
 
 	if len(req.Title) > 200 {
-		return 0, errors.New(
-			"event title cannot exceed 200 characters",
-		)
+		return 0, apperrors.ErrInvalidInput
 	}
 
-	// Validate capacity
 	if req.Capacity != nil && *req.Capacity <= 0 {
-		return 0, errors.New(
-			"capacity must be greater than zero",
-		)
+		return 0, apperrors.ErrInvalidInput
 	}
 
-	// Validate event time
 	if req.StartTime != nil &&
 		req.EndTime != nil &&
 		req.EndTime.Before(*req.StartTime) {
 
-		return 0, errors.New(
-			"end time must be after start time",
-		)
+		return 0, apperrors.ErrInvalidInput
 	}
 
-	event := &Event{
+	eventData := &Event{
 		OrganizationID:       organizationID,
 		Title:                req.Title,
 		Description:          req.Description,
@@ -92,7 +88,29 @@ func (s *Service) CreateEvent(
 		Status:               "draft",
 	}
 
-	return s.repo.CreateEvent(ctx, event)
+	eventID, err := s.repo.CreateEvent(
+		ctx,
+		eventData,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"CREATE_EVENT",
+		"event",
+		eventID,
+		nil,
+	)
+
+	if err != nil {
+		return eventID, err
+	}
+
+	return eventID, nil
 }
 
 
@@ -103,9 +121,11 @@ func (s *Service) GetEvents(
 	ctx context.Context,
 	organizationID int64,
 	userID int64,
-) ([]Event, error) {
+	page int,
+	limit int,
+) (*PaginatedEvents, error) {
 
-	// User must belong to organization
+	// User must belong to the organization.
 	_, err := s.organizationService.GetMemberRole(
 		ctx,
 		organizationID,
@@ -113,15 +133,35 @@ func (s *Service) GetEvents(
 	)
 
 	if err != nil {
-		return nil, errors.New(
-			"you are not a member of this organization",
-		)
+		return nil, apperrors.ErrForbidden
 	}
 
-	return s.repo.GetEventsByOrganizationID(
+	events, total, err := s.repo.GetEventsByOrganizationID(
 		ctx,
 		organizationID,
+		page,
+		limit,
 	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := 0
+
+	if total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	return &PaginatedEvents{
+		Events: events,
+		Pagination: Pagination{
+			Page:       page,
+			Limit:      limit,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}, nil
 }
 
 
@@ -158,65 +198,85 @@ func (s *Service) UpdateEvent(
 ) error {
 
 	// Get existing event
-	event, err := s.repo.GetEventByID(ctx, eventID)
+	eventData, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
 	if err != nil {
-		return errors.New("event not found")
+		return apperrors.ErrEventNotFound
 	}
 
-	// Check organization role
+	// Check user's organization role
 	role, err := s.organizationService.GetMemberRole(
 		ctx,
-		event.OrganizationID,
+		eventData.OrganizationID,
 		userID,
 	)
-
 	if err != nil {
-		return errors.New(
-			"you are not a member of this organization",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// Only OWNER / ADMIN
+	// Only OWNER / ADMIN can update events
 	if role != "OWNER" && role != "ADMIN" {
-		return errors.New(
-			"you do not have permission to update this event",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// Don't allow editing completed/cancelled events
-	if event.Status == "completed" ||
-		event.Status == "cancelled" {
+	// Completed and cancelled events cannot be edited
+	if eventData.Status == "completed" ||
+		eventData.Status == "cancelled" {
 
-		return errors.New(
-			"this event can no longer be updated",
-		)
+		return apperrors.ErrInvalidInput
 	}
 
-	// Validation
+	// Validate title
 	req.Title = strings.TrimSpace(req.Title)
 
 	if req.Title == "" {
-		return errors.New("event title is required")
+		return apperrors.ErrInvalidInput
 	}
 
+	if len(req.Title) > 200 {
+		return apperrors.ErrInvalidInput
+	}
+
+	// Validate capacity
 	if req.Capacity != nil && *req.Capacity <= 0 {
-		return errors.New("capacity must be greater than zero")
+		return apperrors.ErrInvalidInput
 	}
 
+	// Validate event time
 	if req.StartTime != nil &&
 		req.EndTime != nil &&
 		req.EndTime.Before(*req.StartTime) {
 
-		return errors.New(
-			"end time must be after start time",
-		)
+		return apperrors.ErrInvalidInput
 	}
 
-	return s.repo.UpdateEvent(
+	// Update event
+	err = s.repo.UpdateEvent(
 		ctx,
 		eventID,
 		req,
 	)
+	if err != nil {
+		return err
+	}
+
+	// Audit log
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"UPDATE_EVENT",
+		"event",
+		eventID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 
@@ -274,49 +334,59 @@ func (s *Service) PublishEvent(
 	userID int64,
 ) error {
 
-	// Get event
-	event, err := s.repo.GetEventByID(
+	eventData, err := s.repo.GetEventByID(
 		ctx,
 		eventID,
 	)
 
 	if err != nil {
-		return errors.New("event not found")
+		return apperrors.ErrEventNotFound
 	}
 
-	// Check organization role
 	role, err := s.organizationService.GetMemberRole(
 		ctx,
-		event.OrganizationID,
+		eventData.OrganizationID,
 		userID,
 	)
 
 	if err != nil {
-		return errors.New(
-			"you are not a member of this organization",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// Only OWNER / ADMIN can publish
 	if role != "OWNER" && role != "ADMIN" {
-		return errors.New(
-			"you do not have permission to publish this event",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// State machine validation
-	if event.Status != "draft" {
-		return errors.New(
-			"only draft events can be published",
-		)
+	if eventData.Status != "draft" {
+		return apperrors.ErrInvalidInput
 	}
 
-	// Publish
-	return s.repo.PublishEvent(
+	err = s.repo.PublishEvent(
 		ctx,
 		eventID,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"PUBLISH_EVENT",
+		"event",
+		eventID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
+
+
 
 
 func (s *Service) CancelEvent(
@@ -325,50 +395,62 @@ func (s *Service) CancelEvent(
 	userID int64,
 ) error {
 
-	event, err := s.repo.GetEventByID(
+	eventData, err := s.repo.GetEventByID(
 		ctx,
 		eventID,
 	)
 
 	if err != nil {
-		return errors.New("event not found")
+		return apperrors.ErrEventNotFound
 	}
 
 	role, err := s.organizationService.GetMemberRole(
 		ctx,
-		event.OrganizationID,
+		eventData.OrganizationID,
 		userID,
 	)
 
 	if err != nil {
-		return errors.New(
-			"you are not a member of this organization",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// Only OWNER / ADMIN can cancel
 	if role != "OWNER" && role != "ADMIN" {
-		return errors.New(
-			"you do not have permission to cancel this event",
-		)
+		return apperrors.ErrForbidden
 	}
 
-	// Only draft or published events can be cancelled
-	if event.Status != "draft" &&
-		event.Status != "published" {
+	if eventData.Status != "draft" &&
+		eventData.Status != "published" {
 
-		return errors.New(
-			"this event cannot be cancelled",
-		)
+		return apperrors.ErrInvalidInput
 	}
 
-	return s.repo.CancelEvent(
+	// Cancel event + create outbox notifications
+	// inside one DB transaction.
+	err = s.repo.CancelEvent(
 		ctx,
 		eventID,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	// Audit log.
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"CANCEL_EVENT",
+		"event",
+		eventID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
-
-
 
 func (s *Service) GetEventForRegistration(
 	ctx context.Context,
@@ -400,4 +482,65 @@ func (s *Service) GetEventOrganizationID(
 	return eventData.OrganizationID, nil
 }
 
+
+
+
+
+func (s *Service) CompleteEvent(
+	ctx context.Context,
+	eventID int64,
+	userID int64,
+) error {
+
+	eventData, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
+
+	if err != nil {
+		return apperrors.ErrEventNotFound
+	}
+
+	role, err := s.organizationService.GetMemberRole(
+		ctx,
+		eventData.OrganizationID,
+		userID,
+	)
+
+	if err != nil {
+		return apperrors.ErrForbidden
+	}
+
+	if role != "OWNER" && role != "ADMIN" {
+		return apperrors.ErrForbidden
+	}
+
+	if eventData.Status != "published" {
+		return apperrors.ErrInvalidInput
+	}
+
+	err = s.repo.CompleteEvent(
+		ctx,
+		eventID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	err = s.auditService.Log(
+		ctx,
+		&userID,
+		"COMPLETE_EVENT",
+		"event",
+		eventID,
+		nil,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 

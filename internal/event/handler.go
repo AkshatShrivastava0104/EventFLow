@@ -1,10 +1,12 @@
 package event
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -56,9 +58,9 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 	// 3. Read request body
 	var req CreateEventRequest
 
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if errors.Is(err, apperrors.ErrInvalidInput) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+			"error": "invalid event data",
 		})
 		return
 	}
@@ -73,14 +75,13 @@ func (h *Handler) CreateEvent(c *gin.Context) {
 
 	if err != nil {
 
-		if err.Error() == "you are not a member of this organization" ||
-			err.Error() == "you do not have permission to create events" {
-
+		if errors.Is(err, apperrors.ErrForbidden) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
+				"error": "you do not have permission to create events",
 			})
 			return
 		}
+
 
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -130,22 +131,55 @@ func (h *Handler) GetEvents(c *gin.Context) {
 		return
 	}
 
-	events, err := h.service.GetEvents(
+	page := 1
+	limit := 20
+
+	if value := c.Query("page"); value != "" {
+		page, err = strconv.Atoi(value)
+
+		if err != nil || page < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid page",
+			})
+			return
+		}
+	}
+
+	if value := c.Query("limit"); value != "" {
+		limit, err = strconv.Atoi(value)
+
+		if err != nil || limit < 1 || limit > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "limit must be between 1 and 100",
+			})
+			return
+		}
+	}
+
+	result, err := h.service.GetEvents(
 		c.Request.Context(),
 		organizationID,
 		userID,
+		page,
+		limit,
 	)
 
 	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{
-			"error": err.Error(),
+
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to view this organization",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"events": events,
-	})
+	c.JSON(http.StatusOK, result)
 }
 
 
@@ -374,17 +408,30 @@ func (h *Handler) PublishEvent(c *gin.Context) {
 
 	if err != nil {
 
-		if strings.Contains(err.Error(), "permission") {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
+		if errors.Is(err, apperrors.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to publish this event",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "only draft events can be published",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -434,20 +481,118 @@ func (h *Handler) CancelEvent(c *gin.Context) {
 
 	if err != nil {
 
-		if strings.Contains(err.Error(), "permission") {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
+		if errors.Is(err, apperrors.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to cancel this event",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "this event cannot be cancelled",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
-		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "event cancelled successfully",
+	})
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+func (h *Handler) CompleteEvent(c *gin.Context) {
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	eventID, err := strconv.ParseInt(
+		c.Param("id"),
+		10,
+		64,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	err = h.service.CompleteEvent(
+		c.Request.Context(),
+		eventID,
+		userID,
+	)
+
+	if err != nil {
+
+		if errors.Is(err, apperrors.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to update this event",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid event data or event cannot be updated",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event completed successfully",
 	})
 }

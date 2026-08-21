@@ -1,10 +1,12 @@
 package organization
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auth"
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 
 	"github.com/gin-gonic/gin"
 )
@@ -52,13 +54,21 @@ func (h *Handler) CreateOrganization(c *gin.Context) {
 
 	organizationID, err := h.service.CreateOrganization(
 		c.Request.Context(),
-		req,
+		req.Name,
+		req.Description,
 		userID,
 	)
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid organization data",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -219,15 +229,22 @@ func (h *Handler) UpdateOrganization(c *gin.Context) {
 
 	if err != nil {
 
-		if err.Error() == "permission denied" {
+		if errors.Is(err, apperrors.ErrForbidden) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "you do not have permission to update this organization",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid organization data",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -289,15 +306,22 @@ func (h *Handler) AddMember(c *gin.Context) {
 
 	if err != nil {
 
-		if err.Error() == "permission denied" {
+		if errors.Is(err, apperrors.ErrForbidden) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "you do not have permission to add members",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid member role",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -431,15 +455,29 @@ func (h *Handler) UpdateMemberRole(c *gin.Context) {
 
 	if err != nil {
 
-		if err.Error() == "only owner can change member roles" {
+		if errors.Is(err, apperrors.ErrForbidden) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
+				"error": "you do not have permission to change this member role",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "target user is not a member of this organization",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid role",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -505,20 +543,95 @@ func (h *Handler) RemoveMember(c *gin.Context) {
 
 	if err != nil {
 
-		if err.Error() == "only owner can remove members" {
+		if errors.Is(err, apperrors.ErrForbidden) {
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
+				"error": "you do not have permission to remove this member",
 			})
 			return
 		}
 
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "target user is not a member of this organization",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "member removed successfully",
+	})
+}
+
+
+
+func (h *Handler) DeleteOrganization(c *gin.Context) {
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	organizationID, err := strconv.ParseInt(
+		c.Param("id"),
+		10,
+		64,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid organization id",
+		})
+		return
+	}
+
+	err = h.service.DeleteOrganization(
+		c.Request.Context(),
+		organizationID,
+		userID,
+	)
+
+	if err != nil {
+
+		if errors.Is(err, apperrors.ErrOrganizationNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "organization not found",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "only the owner can delete this organization",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "organization deleted successfully",
 	})
 }

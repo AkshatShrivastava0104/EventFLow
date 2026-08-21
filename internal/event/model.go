@@ -16,3 +16,16 @@ type Event struct {
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
+
+
+type Pagination struct {
+	Page       int `json:"page"`
+	Limit      int `json:"limit"`
+	Total      int `json:"total"`
+	TotalPages int `json:"total_pages"`
+}
+
+type PaginatedEvents struct {
+	Events     []Event    `json:"events"`
+	Pagination Pagination `json:"pagination"`
+}

@@ -1,9 +1,11 @@
 package checkin
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -76,44 +78,38 @@ func (h *Handler) CheckIn(c *gin.Context) {
 
 	if err != nil {
 
-		switch err.Error() {
-
-		case "event not found":
+		if errors.Is(err, apperrors.ErrEventNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "you are not a member of this organization":
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "you do not have permission to check in attendees":
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "valid ticket not found for this event":
-			c.JSON(http.StatusNotFound, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "ticket already checked in":
-			c.JSON(http.StatusConflict, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
+				"error": "event not found",
 			})
 			return
 		}
+
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to check in attendees",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "valid ticket not found for this event",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrConflict) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "ticket already checked in",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

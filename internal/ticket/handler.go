@@ -1,9 +1,11 @@
 package ticket
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
+	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -61,26 +63,25 @@ func (h *Handler) CreateTicket(c *gin.Context) {
 
 	if err != nil {
 
-		switch err.Error() {
-
-		case "registration not found":
+		if errors.Is(err, apperrors.ErrRegistrationNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		case "cancelled registration cannot have a ticket":
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-			})
-			return
-
-		default:
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": err.Error(),
+				"error": "registration not found",
 			})
 			return
 		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "cancelled registration cannot have a ticket",
+			})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+		
 	}
 
 	c.JSON(http.StatusCreated, gin.H{

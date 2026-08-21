@@ -170,3 +170,84 @@ func (r *Repository) GetOrganizationsByUserID(
 
 	return organizations, nil
 }
+
+
+
+func (r *Repository) SaveRefreshToken(
+	ctx context.Context,
+	userID int64,
+	token string,
+	expiresAt time.Time,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO refresh_tokens (
+			user_id,
+			token,
+			expires_at,
+			created_at
+		)
+		VALUES ($1, $2, $3, NOW())
+	`,
+		userID,
+		token,
+		expiresAt,
+	)
+
+	return err
+}
+
+
+
+
+func (r *Repository) GetRefreshToken(
+	ctx context.Context,
+	token string,
+) (int64, time.Time, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var userID int64
+	var expiresAt time.Time
+
+	err := r.db.QueryRow(ctx, `
+		SELECT user_id, expires_at
+		FROM refresh_tokens
+		WHERE token = $1
+	`,
+		token,
+	).Scan(
+		&userID,
+		&expiresAt,
+	)
+
+	if err != nil {
+		return 0, time.Time{}, err
+	}
+
+	return userID, expiresAt, nil
+}
+
+
+
+func (r *Repository) DeleteRefreshToken(
+	ctx context.Context,
+	token string,
+) error {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	_, err := r.db.Exec(ctx, `
+		DELETE FROM refresh_tokens
+		WHERE token = $1
+	`,
+		token,
+	)
+
+	return err
+}
