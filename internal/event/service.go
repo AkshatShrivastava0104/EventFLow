@@ -171,12 +171,20 @@ func (s *Service) GetEventByID(
 	userID int64,
 ) (*Event, error) {
 
-	event, err := s.repo.GetEventByID(ctx, eventID)
+	event, err := s.repo.GetEventByID(
+		ctx,
+		eventID,
+	)
 	if err != nil {
 		return nil, errors.New("event not found")
 	}
 
-	// User must belong to the event's organization
+	// Published events are discoverable by authenticated users.
+	if event.Status == "published" {
+		return event, nil
+	}
+
+	// Draft/cancelled/completed events remain organization-scoped.
 	_, err = s.organizationService.GetMemberRole(
 		ctx,
 		event.OrganizationID,
@@ -184,7 +192,9 @@ func (s *Service) GetEventByID(
 	)
 
 	if err != nil {
-		return nil, errors.New("you are not a member of this organization")
+		return nil, errors.New(
+			"you are not a member of this organization",
+		)
 	}
 
 	return event, nil
@@ -542,5 +552,43 @@ func (s *Service) CompleteEvent(
 	}
 
 	return nil
+}
+
+
+func (s *Service) GetAllEvents(
+	ctx context.Context,
+	page int,
+	limit int,
+	status string,
+	order string,
+) (*PaginatedEvents, error) {
+
+	events, total, err := s.repo.GetAllEvents(
+		ctx,
+		page,
+		limit,
+		status,
+		order,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	totalPages := 0
+
+	if total > 0 {
+		totalPages = (total + limit - 1) / limit
+	}
+
+	return &PaginatedEvents{
+		Events: events,
+		Pagination: Pagination{
+			Page:       page,
+			Limit:      limit,
+			Total:      total,
+			TotalPages: totalPages,
+		},
+	}, nil
 }
 

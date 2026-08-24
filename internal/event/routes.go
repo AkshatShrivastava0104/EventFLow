@@ -7,14 +7,24 @@ func RegisterEventRoutes(
 	handler *Handler,
 	authMiddleware gin.HandlerFunc,
 ) {
+	// ==========================================
+	// Organization-scoped events
+	// ==========================================
+
 	organizationEvents := api.Group("/organizations/:id/events")
 	organizationEvents.Use(authMiddleware)
 
 	organizationEvents.POST("", handler.CreateEvent)
 	organizationEvents.GET("", handler.GetEvents)
 
+	// ==========================================
+	// Global event routes
+	// ==========================================
+
 	events := api.Group("/events")
 	events.Use(authMiddleware)
+
+	events.GET("", handler.GetAllEvents)
 
 	events.GET("/:id", handler.GetEventByID)
 

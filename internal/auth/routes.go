@@ -11,6 +11,7 @@ func RegisterAuthRoutes(
 
 	auth.POST("/register", handler.Register)
 	auth.POST("/login", handler.Login)
+	auth.GET("/me", authMiddleware, handler.Me)
 
 	auth.POST("/refresh", handler.Refresh)
 	auth.POST("/logout", handler.Logout)

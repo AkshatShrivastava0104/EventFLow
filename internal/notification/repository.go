@@ -141,7 +141,35 @@ func (r *Repository) GetUserNotifications(
 	return notifications, total, nil
 }
 
-// MarkNotificationAsRead marks a notification as read.
+// GetUnreadCount returns the number of unread notifications
+// for a specific user.
+func (r *Repository) GetUnreadCount(
+	ctx context.Context,
+	userID int64,
+) (int, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var count int
+
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)
+		FROM notifications
+		WHERE user_id = $1
+		  AND status = 'unread'
+	`,
+		userID,
+	).Scan(&count)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+// MarkNotificationAsRead marks a single notification as read.
 func (r *Repository) MarkNotificationAsRead(
 	ctx context.Context,
 	notificationID int64,
@@ -167,8 +195,38 @@ func (r *Repository) MarkNotificationAsRead(
 	}
 
 	if result.RowsAffected() == 0 {
-		return errors.New("notification not found or already read")
+		return errors.New(
+			"notification not found or already read",
+		)
 	}
 
 	return nil
+}
+
+// MarkAllNotificationsAsRead marks all unread notifications
+// belonging to the user as read.
+//
+// Returns the number of notifications updated.
+func (r *Repository) MarkAllNotificationsAsRead(
+	ctx context.Context,
+	userID int64,
+) (int64, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.db.Exec(ctx, `
+		UPDATE notifications
+		SET status = 'read'
+		WHERE user_id = $1
+		  AND status = 'unread'
+	`,
+		userID,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected(), nil
 }

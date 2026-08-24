@@ -8,9 +8,25 @@ func RegisterNotificationRoutes(
 	authMiddleware gin.HandlerFunc,
 ) {
 	notifications := api.Group("/notifications")
-
 	notifications.Use(authMiddleware)
 
-	notifications.GET("", handler.GetMyNotifications)
-	notifications.PATCH("/:id/read", handler.MarkAsRead)
+	notifications.GET(
+		"",
+		handler.GetMyNotifications,
+	)
+
+	notifications.GET(
+		"/unread-count",
+		handler.GetUnreadCount,
+	)
+
+	notifications.PATCH(
+		"/read-all",
+		handler.MarkAllAsRead,
+	)
+
+	notifications.PATCH(
+		"/:id/read",
+		handler.MarkAsRead,
+	)
 }

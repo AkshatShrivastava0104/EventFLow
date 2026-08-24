@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
@@ -485,4 +486,135 @@ func (r *Repository) GetActiveRegistrantUserIDs(
 	}
 
 	return userIDs, nil
+}
+
+
+func (r *Repository) GetAllEvents(
+	ctx context.Context,
+	page int,
+	limit int,
+	status string,
+	order string,
+) ([]Event, int, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	offset := (page - 1) * limit
+
+	// Normalize status.
+	status = strings.TrimSpace(strings.ToLower(status))
+
+	// Normalize order.
+	order = strings.ToLower(strings.TrimSpace(order))
+	if order != "asc" {
+		order = "desc"
+	}
+
+	var total int
+
+	if status == "" || status == "all" {
+		err := r.db.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM events
+		`).Scan(&total)
+
+		if err != nil {
+			return nil, 0, err
+		}
+	} else {
+		err := r.db.QueryRow(ctx, `
+			SELECT COUNT(*)
+			FROM events
+			WHERE status = $1
+		`, status).Scan(&total)
+
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	orderBy := "created_at DESC"
+
+	if order == "asc" {
+		orderBy = "created_at ASC"
+	}
+
+	query := `
+		SELECT
+			id,
+			organization_id,
+			title,
+			description,
+			venue,
+			capacity,
+			registration_deadline,
+			start_time,
+			end_time,
+			status,
+			created_at,
+			updated_at
+		FROM events
+	`
+
+	args := make([]interface{}, 0, 3)
+	argIndex := 1
+
+	if status != "" && status != "all" {
+		query += ` WHERE status = $1`
+		args = append(args, status)
+		argIndex++
+	}
+
+	query += ` ORDER BY ` + orderBy
+	query += ` LIMIT $` + strconv.Itoa(argIndex)
+	args = append(args, limit)
+	argIndex++
+
+	query += ` OFFSET $` + strconv.Itoa(argIndex)
+	args = append(args, offset)
+
+	rows, err := r.db.Query(
+		ctx,
+		query,
+		args...,
+	)
+
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	events := make([]Event, 0)
+
+	for rows.Next() {
+		var event Event
+
+		err := rows.Scan(
+			&event.ID,
+			&event.OrganizationID,
+			&event.Title,
+			&event.Description,
+			&event.Venue,
+			&event.Capacity,
+			&event.RegistrationDeadline,
+			&event.StartTime,
+			&event.EndTime,
+			&event.Status,
+			&event.CreatedAt,
+			&event.UpdatedAt,
+		)
+
+		if err != nil {
+			return nil, 0, err
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	return events, total, nil
 }

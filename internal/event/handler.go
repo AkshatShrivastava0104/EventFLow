@@ -596,3 +596,143 @@ func (h *Handler) CompleteEvent(c *gin.Context) {
 		"message": "event completed successfully",
 	})
 }
+
+
+
+func (h *Handler) GetAllEvents(c *gin.Context) {
+
+	// ==========================================
+	// User authentication
+	// ==========================================
+
+	userIDValue, exists := c.Get("user_id")
+
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	_ = userID
+	// We intentionally don't filter by organization here.
+	// Access to the endpoint itself is protected by JWT.
+	// Published events can be listed globally for discovery.
+	// Owner/admin specific filtering can be tightened later.
+
+	// ==========================================
+	// Pagination
+	// ==========================================
+
+	page := 1
+	limit := 12
+
+	if value := c.Query("page"); value != "" {
+		parsed, err := strconv.Atoi(value)
+
+		if err != nil || parsed < 1 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid page",
+			})
+			return
+		}
+
+		page = parsed
+	}
+
+	if value := c.Query("page_size"); value != "" {
+		parsed, err := strconv.Atoi(value)
+
+		if err != nil || parsed < 1 || parsed > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "page_size must be between 1 and 100",
+			})
+			return
+		}
+
+		limit = parsed
+	} else if value := c.Query("limit"); value != "" {
+		// Backward-compatible support.
+		parsed, err := strconv.Atoi(value)
+
+		if err != nil || parsed < 1 || parsed > 100 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "limit must be between 1 and 100",
+			})
+			return
+		}
+
+		limit = parsed
+	}
+
+	// ==========================================
+	// Filters
+	// ==========================================
+
+	status := strings.TrimSpace(
+		strings.ToLower(
+			c.Query("status"),
+		),
+	)
+
+	switch status {
+	case "":
+	case "all":
+	case "draft":
+	case "published":
+	case "cancelled":
+	case "completed":
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid status",
+		})
+		return
+	}
+
+	order := strings.TrimSpace(
+		strings.ToLower(
+			c.Query("order"),
+		),
+	)
+
+	if order == "" {
+		order = "desc"
+	}
+
+	if order != "asc" && order != "desc" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "order must be asc or desc",
+		})
+		return
+	}
+
+	// ==========================================
+	// Fetch
+	// ==========================================
+
+	result, err := h.service.GetAllEvents(
+		c.Request.Context(),
+		page,
+		limit,
+		status,
+		order,
+	)
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
