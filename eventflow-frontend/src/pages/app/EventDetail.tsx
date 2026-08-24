@@ -42,7 +42,9 @@ export function AppEventDetail() {
   const invalidateRegs = () =>
     qc.invalidateQueries({ queryKey: ['registrations', 'mine'] });
 
-  const myReg = myRegsQ.data?.registrations.find(
+  // The Go API serializes an empty slice as `null`, so guard the array itself —
+  // `data?.` only covers a missing envelope, not a null `registrations` field.
+  const myReg = myRegsQ.data?.registrations?.find(
     (r) => r.event_id === id && r.status.toLowerCase() !== 'cancelled',
   );
 

@@ -105,7 +105,7 @@ export function Analytics() {
         />
         <StatCard
           label="Members"
-          value={membersQ.isLoading ? '—' : membersQ.data?.members.length ?? 0}
+          value={membersQ.isLoading ? '—' : membersQ.data?.members?.length ?? 0}
           icon={<Users className="h-5 w-5" />}
         />
       </div>

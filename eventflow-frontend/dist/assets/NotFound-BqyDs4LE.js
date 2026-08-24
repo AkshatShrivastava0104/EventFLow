@@ -1,6 +1,0 @@
-import{c as n,j as e,b as s}from"./index-DnveuruW.js";import{B as t}from"./Button-BAqxUtvo.js";/**
- * @license lucide-react v0.451.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const a=n("Compass",[["path",{d:"m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z",key:"9ktpf1"}],["circle",{cx:"12",cy:"12",r:"10",key:"1mglay"}]]);function r(){return e.jsx("div",{className:"grid min-h-screen place-items-center bg-ink-50 p-6",children:e.jsxs("div",{className:"text-center",children:[e.jsx("span",{className:"mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-ink-100 text-ink-500",children:e.jsx(a,{className:"h-7 w-7"})}),e.jsx("p",{className:"text-sm font-semibold uppercase tracking-wide text-ink-400",children:"404"}),e.jsx("h1",{className:"mt-1 text-2xl font-semibold tracking-tight text-ink-900",children:"Page not found"}),e.jsx("p",{className:"mx-auto mt-2 max-w-sm text-ink-500",children:"The page you're looking for doesn't exist or may have moved."}),e.jsxs("div",{className:"mt-6 flex items-center justify-center gap-2",children:[e.jsx(s,{to:"/",children:e.jsx(t,{variant:"outline",children:"Go home"})}),e.jsx(s,{to:"/app",children:e.jsx(t,{children:"Browse events"})})]})]})})}export{r as NotFound};
