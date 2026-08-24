@@ -1,16 +1,27 @@
 import { get, post, del } from './client';
-import type { Registration } from '@/types/registration';
-import type { ListQuery, Paginated } from '@/types/common';
+import type {
+  PaginatedRegistrations,
+  PaginatedAttendees,
+} from '@/types/registration';
+
+// POST /events/:id/register responds with a registration OR waitlist id.
+export interface RegisterResponse {
+  message: string;
+  registration_id?: number;
+  waitlist_id?: number;
+}
 
 export const registrationsApi = {
-  mine: (q: ListQuery = {}) =>
-    get<Paginated<Registration>>('/registrations/me', q as Record<string, unknown>),
-  forEvent: (eventId: string, q: ListQuery = {}) =>
-    get<Paginated<Registration>>(
-      `/events/${eventId}/registrations`,
-      q as Record<string, unknown>,
-    ),
-  register: (eventId: string) => post<Registration>(`/events/${eventId}/register`),
-  cancel: (registrationId: string) =>
-    del<void>(`/registrations/${registrationId}`),
+  register: (eventId: number) =>
+    post<RegisterResponse>(`/events/${eventId}/register`),
+
+  mine: (params?: { page?: number; limit?: number }) =>
+    get<PaginatedRegistrations>('/registrations/me', params),
+
+  cancel: (registrationId: number) =>
+    del<{ message: string }>(`/registrations/${registrationId}`),
+
+  // Organizer-facing attendee list for a single event.
+  forEvent: (eventId: number, params?: { page?: number; limit?: number }) =>
+    get<PaginatedAttendees>(`/events/${eventId}/registrations`, params),
 };

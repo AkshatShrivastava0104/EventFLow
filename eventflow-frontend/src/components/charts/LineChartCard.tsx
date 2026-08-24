@@ -1,47 +1,93 @@
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
 } from 'recharts';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
+
+export interface ChartSeries {
+  key: string;
+  label: string;
+  color?: string;
+}
 
 interface Props {
   title: string;
   description?: string;
-  data: Array<Record<string, any>>;
-  dataKey: string;
+  data: Record<string, unknown>[];
   xKey: string;
+  series: ChartSeries[];
   height?: number;
 }
 
-export function LineChartCard({ title, description, data, dataKey, xKey, height = 240 }: Props) {
+const DEFAULT_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#ef4444'];
+
+export function LineChartCard({
+  title,
+  description,
+  data,
+  xKey,
+  series,
+  height = 260,
+}: Props) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="mb-2">
         <div>
           <CardTitle>{title}</CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </div>
       </CardHeader>
-      <div style={{ width: '100%', height }}>
-        <ResponsiveContainer>
-          <AreaChart data={data} margin={{ left: -16, right: 8, top: 8, bottom: 0 }}>
-            <defs>
-              <linearGradient id="grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#18181b" stopOpacity={0.18} />
-                <stop offset="100%" stopColor="#18181b" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid stroke="#e4e4e7" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey={xKey} tickLine={false} axisLine={false} stroke="#a1a1aa" fontSize={12} />
-            <YAxis tickLine={false} axisLine={false} stroke="#a1a1aa" fontSize={12} width={32} />
-            <Tooltip
-              contentStyle={{
-                borderRadius: 6, border: '1px solid #e4e4e7', fontSize: 12,
-              }}
-            />
-            <Area type="monotone" dataKey={dataKey} stroke="#18181b" strokeWidth={2} fill="url(#grad)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {data.length === 0 ? (
+        <div style={{ height }} className="grid place-items-center">
+          <EmptyState title="No data yet" description="Data will appear here once activity begins." />
+        </div>
+      ) : (
+        <div style={{ height }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" vertical={false} />
+              <XAxis
+                dataKey={xKey}
+                tick={{ fontSize: 12, fill: '#a1a1aa' }}
+                axisLine={{ stroke: '#e4e4e7' }}
+                tickLine={false}
+              />
+              <YAxis
+                tick={{ fontSize: 12, fill: '#a1a1aa' }}
+                axisLine={false}
+                tickLine={false}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: 8,
+                  border: '1px solid #e4e4e7',
+                  fontSize: 12,
+                  boxShadow: '0 8px 24px -4px rgba(0,0,0,0.08)',
+                }}
+              />
+              {series.map((s, i) => (
+                <Line
+                  key={s.key}
+                  type="monotone"
+                  dataKey={s.key}
+                  name={s.label}
+                  stroke={s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
+                  strokeWidth={2}
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </Card>
   );
 }

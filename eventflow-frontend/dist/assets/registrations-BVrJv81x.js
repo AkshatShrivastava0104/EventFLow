@@ -1,0 +1,1 @@
+import{p as s,Z as r,H as i}from"./index-DnveuruW.js";const o={register:e=>i(`/events/${e}/register`),mine:e=>s("/registrations/me",e),cancel:e=>r(`/registrations/${e}`),forEvent:(e,t)=>s(`/events/${e}/registrations`,t)};export{o as r};

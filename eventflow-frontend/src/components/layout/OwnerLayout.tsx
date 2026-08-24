@@ -1,66 +1,138 @@
 import { useState } from 'react';
-import { Outlet, NavLink, Link } from 'react-router-dom';
+import { NavLink, Outlet } from 'react-router-dom';
 import {
-  LayoutDashboard, Building2, CalendarDays, Users, Ticket,
-  ScanLine, BellRing, Settings, X,
+  Activity,
+  Building2,
+  LayoutDashboard,
+  Menu,
+  Users,
+  X,
+  LucideIcon,
 } from 'lucide-react';
-import { OwnerSidebar } from './OwnerSidebar';
-import { OwnerTopbar } from './OwnerTopbar';
+import { Logo } from '@/components/brand/Logo';
+import { RoleSwitcher } from '@/components/layout/RoleSwitcher';
+import { NotificationBell } from '@/components/layout/NotificationBell';
+import { UserMenu } from '@/components/layout/UserMenu';
 import { cn } from '@/lib/utils';
 
-const NAV = [
-  { to: '/owner/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+  end?: boolean;
+}
+
+const NAV: NavItem[] = [
+  { to: '/owner', label: 'Overview', icon: LayoutDashboard, end: true },
   { to: '/owner/organizations', label: 'Organizations', icon: Building2 },
-  { to: '/owner/events', label: 'Events', icon: CalendarDays },
-  { to: '/owner/registrations', label: 'Registrations', icon: Users },
-  { to: '/owner/tickets', label: 'Tickets', icon: Ticket },
-  { to: '/owner/check-in', label: 'Check-in', icon: ScanLine },
-  { to: '/owner/notifications', label: 'Notifications', icon: BellRing },
-  { to: '/owner/settings', label: 'Settings', icon: Settings },
+  { to: '/owner/users', label: 'Users', icon: Users },
+  { to: '/owner/system', label: 'System health', icon: Activity },
 ];
 
+function NavItems({ onNavigate }: { onNavigate?: () => void }) {
+  return (
+    <nav className="flex flex-col gap-1">
+      {NAV.map(({ to, label, icon: Icon, end }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={end}
+          onClick={onNavigate}
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
+              isActive
+                ? 'bg-white/10 text-white'
+                : 'text-ink-400 hover:bg-white/5 hover:text-white',
+            )
+          }
+        >
+          <Icon className="h-[18px] w-[18px]" />
+          {label}
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+function SidebarInner() {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex h-16 items-center px-5">
+        <Logo tone="light" />
+      </div>
+      <div className="px-3 pb-2">
+        <p className="px-3 pb-2 text-2xs font-semibold uppercase tracking-widest text-accent-400">
+          Platform Console
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3">
+        <NavItems />
+      </div>
+      <div className="border-t border-white/10 p-4">
+        <p className="text-xs text-ink-500">Super-admin access</p>
+      </div>
+    </div>
+  );
+}
+
 export function OwnerLayout() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [drawer, setDrawer] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-ink-50">
-      <OwnerSidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
+    <div className="min-h-screen bg-ink-50">
+      {/* Fixed dark sidebar (lg+) */}
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 bg-ink-950 lg:block">
+        <SidebarInner />
+      </aside>
 
       {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div className="absolute inset-0 bg-ink-950/40" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute left-0 top-0 h-full w-64 bg-ink-950 p-3 text-ink-200">
-            <div className="mb-2 flex items-center justify-between">
-              <Link to="/owner/dashboard" className="flex items-center gap-2 text-white">
-                <span className="grid h-7 w-7 place-items-center rounded bg-white font-bold text-ink-950">E</span>
-                <span className="text-sm font-semibold">EventFlow</span>
-              </Link>
-              <button onClick={() => setMobileOpen(false)} className="rounded p-1 hover:bg-white/10">
-                <X className="h-4 w-4" />
-              </button>
+      {drawer && (
+        <div className="lg:hidden">
+          <button
+            className="fixed inset-0 z-40 bg-ink-950/50"
+            aria-hidden="true"
+            onClick={() => setDrawer(false)}
+          />
+          <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-ink-950">
+            <button
+              className="absolute right-3 top-4 grid h-8 w-8 place-items-center rounded text-ink-400 hover:text-white"
+              onClick={() => setDrawer(false)}
+              aria-label="Close menu"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex h-16 items-center px-5">
+              <Logo tone="light" />
             </div>
-            <nav className="space-y-1">
-              {NAV.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to} to={to} onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) => cn(
-                    'flex items-center gap-3 rounded px-3 py-2 text-sm',
-                    isActive ? 'bg-white/10 text-white' : 'text-ink-300 hover:bg-white/5',
-                  )}
-                >
-                  <Icon className="h-4 w-4" /> {label}
-                </NavLink>
-              ))}
-            </nav>
+            <div className="px-3 pt-2">
+              <NavItems onNavigate={() => setDrawer(false)} />
+            </div>
           </aside>
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 flex-col">
-        <OwnerTopbar onMobileMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+      <div className="lg:pl-64">
+        {/* Topbar */}
+        <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-white/10 bg-ink-900 px-4 sm:px-6">
+          <button
+            className="grid h-9 w-9 place-items-center rounded text-white/80 hover:bg-white/10 lg:hidden"
+            onClick={() => setDrawer(true)}
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <div className="flex items-center gap-2 lg:hidden">
+            <Logo tone="light" showText={false} size={28} />
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            <RoleSwitcher tone="light" />
+            <NotificationBell tone="light" />
+            <UserMenu tone="light" />
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>

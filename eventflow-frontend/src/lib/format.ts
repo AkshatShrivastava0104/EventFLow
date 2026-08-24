@@ -6,6 +6,9 @@ export const fmtDateTime = (iso?: string | null) =>
 export const fmtDate = (iso?: string | null) =>
   iso ? format(parseISO(iso), 'MMM d, yyyy') : '—';
 
+export const fmtDateShort = (iso?: string | null) =>
+  iso ? format(parseISO(iso), 'MMM d') : '';
+
 export const fmtTime = (iso?: string | null) =>
   iso ? format(parseISO(iso), 'h:mm a') : '—';
 

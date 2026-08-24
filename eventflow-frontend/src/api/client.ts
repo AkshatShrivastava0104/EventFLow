@@ -144,7 +144,9 @@ api.interceptors.response.use(
 );
 
 // --- Helpers ---------------------------------------------------------------
-export async function get<T>(url: string, params?: Record<string, unknown>) {
+// `params` is forwarded straight to axios; accept any plain object so typed
+// param interfaces (which lack an index signature) are assignable.
+export async function get<T>(url: string, params?: object) {
   const r = await api.get<T>(url, { params });
   return r.data;
 }

@@ -1,25 +1,28 @@
-export type UserRole = 'owner' | 'admin' | 'staff' | 'attendee';
+// Auth contract. Register/login return ONLY tokens — the current user is
+// fetched separately via GET /auth/me.
+
+export type SystemRole = 'user' | 'admin';
 
 export interface User {
-  id: string;
-  email: string;
+  id: number;
   name: string;
-  role: UserRole;
-  organization_id?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  email: string;
+  role: SystemRole;
+  email_verified: boolean;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
 }
 
 export interface AuthResponse {
-  user: User;
   access_token: string;
   refresh_token: string;
-}
-
-export interface LoginPayload { email: string; password: string; }
-export interface RegisterPayload {
-  email: string;
-  password: string;
-  name: string;
-  organization_name?: string;
 }

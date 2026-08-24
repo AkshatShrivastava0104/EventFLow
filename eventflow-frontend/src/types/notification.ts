@@ -1,19 +1,17 @@
-export type NotificationType =
-  | 'registration_confirmed'
-  | 'waitlist_joined'
-  | 'waitlist_promoted'
-  | 'registration_cancelled'
-  | 'event_cancelled'
-  | 'event_updated'
-  | 'ticket_issued';
+import type { Pagination } from './common';
+
+export type NotificationStatus = 'unread' | 'read';
 
 export interface Notification {
-  id: string;
-  user_id: string;
-  type: NotificationType;
-  title: string;
+  id: number;
+  user_id: number;
+  type: string;
   message: string;
-  data?: Record<string, unknown> | null;
-  read_at?: string | null;
+  status: NotificationStatus;
   created_at: string;
+}
+
+export interface PaginatedNotifications {
+  notifications: Notification[];
+  pagination: Pagination;
 }

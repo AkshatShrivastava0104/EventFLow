@@ -1,18 +1,18 @@
-export interface Paginated<T> {
-  data: T[];
-  meta: {
-    page: number;
-    page_size: number;
-    total: number;
-    total_pages: number;
-  };
+// Shared primitives that mirror the Go backend's JSON conventions.
+// Every list endpoint returns a `pagination` object with these exact keys.
+
+export type ID = number;
+
+export interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
 }
 
-export interface ListQuery {
-  page?: number;
-  page_size?: number;
-  search?: string;
-  sort?: string;
-  order?: 'asc' | 'desc';
-  status?: string;
-}
+export const EMPTY_PAGINATION: Pagination = {
+  page: 1,
+  limit: 20,
+  total: 0,
+  total_pages: 0,
+};

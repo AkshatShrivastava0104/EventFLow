@@ -1,21 +1,42 @@
+// Organizations + membership. Member roles are UPPERCASE on the wire.
+
 export interface Organization {
-  id: string;
+  id: number;
+  owner_id: number;
   name: string;
-  slug: string;
-  description?: string | null;
-  owner_id: string;
+  description: string;
   created_at: string;
-  updated_at?: string;
+  updated_at: string;
 }
 
-export type OrganizationMemberRole = 'owner' | 'admin' | 'staff';
+export type MemberRole = 'OWNER' | 'ADMIN' | 'MEMBER' | 'VOLUNTEER';
+
+/** Roles assignable when adding/updating a member (OWNER is implicit). */
+export type AssignableRole = Exclude<MemberRole, 'OWNER'>;
 
 export interface OrganizationMember {
-  id: string;
-  organization_id: string;
-  user_id: string;
+  user_id: number;
   name: string;
   email: string;
-  role: OrganizationMemberRole;
-  created_at: string;
+  role: MemberRole;
+  joined_at: string;
+}
+
+export interface CreateOrganizationPayload {
+  name: string;
+  description?: string;
+}
+
+export interface UpdateOrganizationPayload {
+  name: string;
+  description?: string;
+}
+
+export interface AddMemberPayload {
+  user_id: number;
+  role: AssignableRole;
+}
+
+export interface UpdateMemberPayload {
+  role: AssignableRole;
 }

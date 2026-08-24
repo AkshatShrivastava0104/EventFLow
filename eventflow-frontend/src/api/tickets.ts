@@ -1,12 +1,13 @@
 import { get, post } from './client';
-import type { Ticket } from '@/types/ticket';
-import type { ListQuery, Paginated } from '@/types/common';
+import type { MyTicket } from '@/types/ticket';
 
 export const ticketsApi = {
-  list: (q: ListQuery = {}) =>
-    get<Paginated<Ticket>>('/tickets', q as Record<string, unknown>),
-  mine: () => get<Ticket[]>('/tickets/mine'),
-  issue: (registrationId: string) =>
-    post<Ticket>(`/registrations/${registrationId}/ticket`),
-  get: (id: string) => get<Ticket>(`/tickets/${id}`),
+  // Generate a ticket for a confirmed registration.
+  create: (registrationId: number) =>
+    post<{ message: string; ticket_id: number }>(
+      `/registrations/${registrationId}/ticket`,
+    ),
+
+  // Attendee wallet — tickets enriched with event details.
+  mine: () => get<{ tickets: MyTicket[] }>('/tickets/me'),
 };
