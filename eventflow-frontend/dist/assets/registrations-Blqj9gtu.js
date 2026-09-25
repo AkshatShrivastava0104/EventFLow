@@ -1,1 +1,0 @@
-import{q as s,_ as r,I as i}from"./index-Cx-BqWMB.js";const o={register:e=>i(`/events/${e}/register`),mine:e=>s("/registrations/me",e),cancel:e=>r(`/registrations/${e}`),forEvent:(e,t)=>s(`/events/${e}/registrations`,t)};export{o as r};

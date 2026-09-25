@@ -1,1 +1,0 @@
-import{I as n,_ as a,$ as o,q as s}from"./index-Cx-BqWMB.js";const i={browse:e=>s("/events",e),listByOrg:(e,t)=>s(`/organizations/${e}/events`,t),get:e=>s(`/events/${e}`),create:(e,t)=>n(`/organizations/${e}/events`,t),update:(e,t)=>o(`/events/${e}`,t),remove:e=>a(`/events/${e}`),transition:(e,t)=>n(`/events/${e}/${t}`)};export{i as e};

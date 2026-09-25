@@ -1,6 +1,0 @@
-import{c as o,j as e,B as l,t as m}from"./index-Cx-BqWMB.js";import{C as d}from"./chevron-right-Kqhc1_v_.js";/**
- * @license lucide-react v0.451.0 - ISC
- *
- * This source code is licensed under the ISC license.
- * See the LICENSE file in the root directory of this source tree.
- */const f=o("ChevronLeft",[["path",{d:"m15 18-6-6 6-6",key:"1wnfg3"}]]);function k({page:n,totalPages:i,onChange:t,className:x}){if(i<=1)return null;const c=Array.from({length:i},(s,r)=>r+1).filter(s=>s===1||s===i||Math.abs(s-n)<=1);return e.jsxs("div",{className:m("flex items-center justify-between gap-2",x),children:[e.jsxs("p",{className:"text-sm text-ink-500",children:["Page ",n," of ",i]}),e.jsxs("div",{className:"flex items-center gap-1",children:[e.jsx(l,{variant:"outline",size:"sm",onClick:()=>t(Math.max(1,n-1)),disabled:n<=1,children:e.jsx(f,{className:"h-4 w-4"})}),c.map((s,r)=>{const a=c[r-1],h=a&&s-a>1;return e.jsxs("span",{className:"flex items-center gap-1",children:[h&&e.jsx("span",{className:"px-1 text-ink-400",children:"…"}),e.jsx("button",{onClick:()=>t(s),className:m("h-8 min-w-[2rem] rounded px-2 text-sm",s===n?"bg-ink-900 text-white":"text-ink-700 hover:bg-ink-100"),children:s})]},s)}),e.jsx(l,{variant:"outline",size:"sm",onClick:()=>t(Math.min(i,n+1)),disabled:n>=i,children:e.jsx(d,{className:"h-4 w-4"})})]})]})}export{k as P};
