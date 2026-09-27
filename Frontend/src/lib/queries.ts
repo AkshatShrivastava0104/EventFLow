@@ -48,27 +48,65 @@ function normalizeArray<T>(
  * Normalize them here so every screen gets the same shape.
  */
 function normalizeEvent(event: any): EventItem {
+  const coverImage =
+    event?.cover_image ??
+    event?.cover_media_url ??
+    '';
+
+  const coverMediaUrl =
+    event?.cover_media_url ??
+    event?.cover_image ??
+    '';
+
   return {
     ...event,
 
     start_at:
-      event.start_at ??
-      event.start_time ??
+      event?.start_at ??
+      event?.start_time ??
       null,
 
     end_at:
-      event.end_at ??
-      event.end_time ??
+      event?.end_at ??
+      event?.end_time ??
       null,
 
     price:
-      event.price !== undefined &&
-        event.price !== null
+      event?.price !== undefined &&
+        event?.price !== null
         ? Number(event.price)
         : 0,
 
     category:
-      event.category ??
+      event?.category ??
+      null,
+
+    /*
+     * Backend stores the uploaded image path
+     * in cover_image.
+     */
+    cover_image: coverImage,
+
+    cover_media_url: coverMediaUrl,
+
+    /*
+     * Image uploads only.
+     */
+    cover_media_type: 'image',
+
+    /*
+     * Registration state for the currently
+     * authenticated user.
+     */
+    is_registered:
+      event?.is_registered ??
+      event?.registered ??
+      event?.user_registered ??
+      false,
+
+    registration_status:
+      event?.registration_status ??
+      event?.user_registration_status ??
       null,
   } as EventItem;
 }
@@ -84,6 +122,102 @@ function normalizeEvents(
   return events.map(normalizeEvent);
 }
 
+function normalizeRegistration(
+  registration: any,
+): Registration {
+  return {
+    ...registration,
+
+    id: Number(registration?.id ?? 0),
+    event_id: Number(
+      registration?.event_id ??
+      registration?.eventId ??
+      0,
+    ),
+
+    status:
+      registration?.status ??
+      'pending',
+
+    payment_status:
+      registration?.payment_status ??
+      'unpaid',
+  } as Registration;
+}
+
+function normalizeRegistrations(
+  response: any,
+): Registration[] {
+  const registrations = normalizeArray<any>(
+    response,
+    ['registrations'],
+  );
+
+  return registrations.map(
+    normalizeRegistration,
+  );
+}
+
+function normalizeTicket(ticket: any): Ticket {
+  return {
+    ...ticket,
+
+    id:
+      ticket?.id ??
+      ticket?.ticket_id ??
+      '',
+
+    registration_id: Number(
+      ticket?.registration_id ??
+      ticket?.registrationId ??
+      0,
+    ),
+
+    ticket_number:
+      ticket?.ticket_number ??
+      ticket?.ticket_code ??
+      '',
+
+    ticket_code:
+      ticket?.ticket_code ??
+      ticket?.ticket_number ??
+      '',
+
+    qr_code:
+      ticket?.qr_code ??
+      ticket?.qrCode ??
+      '',
+
+    checked_in:
+      Boolean(
+        ticket?.checked_in ??
+        ticket?.checkedIn ??
+        ticket?.checked_in_at,
+      ),
+
+    checked_in_at:
+      ticket?.checked_in_at ??
+      ticket?.checkedInAt ??
+      null,
+
+    registration_status:
+      ticket?.registration_status ??
+      ticket?.registrationStatus ??
+      'registered',
+  } as Ticket;
+}
+
+function normalizeTickets(
+  response: any,
+): Ticket[] {
+  const tickets = normalizeArray<any>(
+    response,
+    ['tickets'],
+  );
+
+  return tickets.map(normalizeTicket);
+}
+
 /* =========================================================
    Events
 ========================================================= */
@@ -92,7 +226,7 @@ export const EventsAPI = {
   // GET /api/v1/events
   //
   // Global event discovery.
-  // Used for public/published event listing.
+  // Used for published event listing.
   list: async (
     params: Record<string, any> = {},
   ): Promise<EventItem[]> => {
@@ -109,7 +243,6 @@ export const EventsAPI = {
   // GET /api/v1/organizations/:organizationId/events
   //
   // Organization-scoped event listing.
-  // Used by ADMIN/STAFF dashboards.
   listByOrganization: async (
     organizationId: number | string,
     params: Record<string, any> = {},
@@ -157,10 +290,28 @@ export const EventsAPI = {
     delete (body as any).organizationId;
 
     const response =
-      await api.post<EventItem>(
+      await api.post(
         `/organizations/${organizationId}/events`,
         body,
       );
+
+    /*
+     * Backend CreateEvent currently returns:
+     *
+     * {
+     *   message: "event created successfully",
+     *   event_id: 123
+     * }
+     */
+    if (
+      response.data &&
+      response.data.event_id !== undefined
+    ) {
+      return normalizeEvent({
+        ...response.data,
+        id: response.data.event_id,
+      });
+    }
 
     return normalizeEvent(
       response.data,
@@ -173,7 +324,7 @@ export const EventsAPI = {
     payload: Partial<EventItem>,
   ): Promise<EventItem> => {
     const response =
-      await api.patch<EventItem>(
+      await api.patch(
         `/events/${id}`,
         payload,
       );
@@ -189,6 +340,57 @@ export const EventsAPI = {
   ) => {
     const response = await api.delete(
       `/events/${id}`,
+    );
+
+    return response.data;
+  },
+
+  /*
+   * =======================================================
+   * Event Media Upload
+   * =======================================================
+   *
+   * Image only.
+   */
+  uploadMedia: async (
+    eventId: number | string,
+    file: File,
+  ) => {
+    if (!file) {
+      throw new Error(
+        'Image file is required',
+      );
+    }
+
+    const allowedTypes = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    ]);
+
+    if (!allowedTypes.has(file.type)) {
+      throw new Error(
+        'Only JPG, PNG, WEBP, and GIF images are allowed.',
+      );
+    }
+
+    const formData = new FormData();
+
+    formData.append(
+      'file',
+      file,
+    );
+
+    const response = await api.post(
+      `/events/${eventId}/media`,
+      formData,
+      {
+        headers: {
+          'Content-Type':
+            'multipart/form-data',
+        },
+      },
     );
 
     return response.data;
@@ -242,9 +444,8 @@ export const RegistrationsAPI = {
       { params },
     );
 
-    return normalizeArray<Registration>(
+    return normalizeRegistrations(
       response.data,
-      ['registrations'],
     );
   },
 
@@ -257,7 +458,9 @@ export const RegistrationsAPI = {
         `/registrations/${id}`,
       );
 
-    return response.data;
+    return normalizeRegistration(
+      response.data,
+    );
   },
 
   // POST /api/v1/events/:eventId/register
@@ -317,9 +520,8 @@ export const TicketsAPI = {
       { params },
     );
 
-    return normalizeArray<Ticket>(
+    return normalizeTickets(
       response.data,
-      ['tickets'],
     );
   },
 
@@ -327,12 +529,23 @@ export const TicketsAPI = {
   get: async (
     id: number | string,
   ): Promise<Ticket> => {
-    const response =
-      await api.get<Ticket>(
-        `/tickets/${id}`,
-      );
+    const response = await api.get(
+      `/tickets/${id}`,
+    );
 
-    return response.data;
+    // Backend returns:
+    // {
+    //   ticket: { ... }
+    // }
+    //
+    // Normalize the actual ticket object.
+    const ticketData =
+      response.data?.ticket ??
+      response.data;
+
+    return normalizeTicket(
+      ticketData,
+    );
   },
 
   // POST /api/v1/events/:eventId/checkin
@@ -351,6 +564,10 @@ export const TicketsAPI = {
   },
 
   // POST /api/v1/registrations/:registrationId/ticket
+  //
+  // Kept for backwards compatibility.
+  // Normal free registration now creates its ticket
+  // automatically on the backend.
   create: async (
     registrationId: number | string,
   ) => {
@@ -553,7 +770,9 @@ export const NotificationsAPI = {
     const response = await api.get<{
       count?: number;
       unread_count?: number;
-    }>('/notifications/unread-count');
+    }>(
+      '/notifications/unread-count',
+    );
 
     return Number(
       response.data.count ??
@@ -613,6 +832,12 @@ export const WaitlistAPI = {
    Stats
 ========================================================= */
 
+export type AnalyticsRange =
+  | '7d'
+  | '30d'
+  | '90d'
+  | '12m';
+
 export const StatsAPI = {
   // GET /api/v1/stats/platform
   platform: async () => {
@@ -624,11 +849,26 @@ export const StatsAPI = {
   },
 
   // GET /api/v1/organizations/:organizationId/stats
+  //
+  // Supported ranges:
+  //   7d  = last 7 days
+  //   30d = last 30 days
+  //   90d = last 90 days
+  //   12m = last 12 months
+  //
+  // Default:
+  //   30d
   organization: async (
     organizationId: number | string,
+    range: AnalyticsRange = '30d',
   ) => {
     const response = await api.get(
       `/organizations/${organizationId}/stats`,
+      {
+        params: {
+          range,
+        },
+      },
     );
 
     return response.data;
@@ -654,9 +894,9 @@ export const PaymentsAPI = {
   /*
    * IMPORTANT:
    * These are still frontend-only mock payments.
-   * They are NOT connected to Razorpay/Stripe/your Go backend yet.
+   * They are NOT connected to Razorpay/Stripe/Go backend yet.
    *
-   * Keep this temporarily so existing payment UI does not break.
+   * Keep temporarily so existing payment UI does not break.
    */
 
   createIntent: async (payload: {

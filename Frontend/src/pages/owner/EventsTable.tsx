@@ -1,751 +1,1250 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from '@tanstack/react-query';
-import {
-  Plus,
   Search,
-  MoreVertical,
-  Edit2,
-  Copy,
-  Trash2,
-  PlayCircle,
-  XCircle,
-  CheckSquare,
-  ExternalLink,
+  CalendarDays,
+  Users,
+  IndianRupee,
+  Building2,
+  Clock3,
+  CheckCircle2,
+  Radio,
+  ChevronDown,
+  ChevronRight,
+  MapPin,
 } from 'lucide-react';
+
 import { EventsAPI } from '../../lib/queries';
-import { Button } from '../../components/ui/Button';
+import { resolveMediaUrl } from '../../lib/api';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { fmtDate } from '../../lib/utils';
-import { useAuth } from '../../contexts/AuthContext';
-import toast from 'react-hot-toast';
+import type { EventItem } from '../../lib/types';
 
-type MenuPosition = {
-  top: number;
-  right: number;
+type EventStatus =
+  | 'all'
+  | 'published'
+  | 'draft'
+  | 'cancelled'
+  | 'completed';
+
+type TimeFilter =
+  | 'all'
+  | 'upcoming'
+  | 'live'
+  | 'past';
+
+type SortOption =
+  | 'date_asc'
+  | 'date_desc'
+  | 'registrations'
+  | 'revenue';
+
+type OrganizationGroup = {
+  key: string;
+  name: string;
+  events: EventItem[];
 };
 
 export function EventsTable() {
-  const qc = useQueryClient();
-  const { role } = useAuth();
-
   const [q, setQ] = useState('');
-  const [status, setStatus] = useState('all');
-  const [openMenu, setOpenMenu] = useState<number | null>(null);
-  const [menuPosition, setMenuPosition] =
-    useState<MenuPosition | null>(null);
+  const [status, setStatus] =
+    useState<EventStatus>('all');
 
-  const isAdmin = role === 'admin';
+  const [timeFilter, setTimeFilter] =
+    useState<TimeFilter>('all');
 
-  const eventsBasePath = isAdmin
-    ? '/admin/events'
-    : '/dashboard/events';
+  const [category, setCategory] =
+    useState('all');
 
-  const createEventPath = `${eventsBasePath}/new`;
+  const [organization, setOrganization] =
+    useState('all');
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['events', role],
+  const [sort, setSort] =
+    useState<SortOption>('date_asc');
+
+  const [
+    expandedOrganizations,
+    setExpandedOrganizations,
+  ] = useState<Record<string, boolean>>({});
+
+  /*
+   * =========================================================
+   * FETCH EVENTS
+   * =========================================================
+   */
+
+  const {
+    data: events = [],
+    isLoading,
+    isError,
+  } = useQuery<EventItem[]>({
+    queryKey: ['events'],
     queryFn: () => EventsAPI.list(),
   });
 
-  const items = useMemo(() => {
-    let list = data || [];
+  /*
+   * =========================================================
+   * HELPERS
+   * =========================================================
+   */
+
+  const getOrganizationName = (
+    event: EventItem,
+  ): string => {
+    return (
+      event.organizer_name?.trim() ||
+      'Organization'
+    );
+  };
+
+  const getOrganizationKey = (
+    event: EventItem,
+  ): string => {
+    if (event.org_id !== null) {
+      return String(event.org_id);
+    }
+
+    return `organization-${getOrganizationName(
+      event,
+    )}`;
+  };
+
+  const getStartDate = (
+    event: EventItem,
+  ): Date | null => {
+    if (!event.start_at) {
+      return null;
+    }
+
+    const value = new Date(event.start_at);
+
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  };
+
+  const getEndDate = (
+    event: EventItem,
+  ): Date | null => {
+    if (!event.end_at) {
+      return null;
+    }
+
+    const value = new Date(event.end_at);
+
+    return Number.isNaN(value.getTime())
+      ? null
+      : value;
+  };
+
+  const getRegistered = (
+    event: EventItem,
+  ): number => {
+    return Number(event.registered_count ?? 0) || 0;
+  };
+
+  const getCapacity = (
+    event: EventItem,
+  ): number => {
+    return Number(event.capacity ?? 0) || 0;
+  };
+
+  const getPrice = (
+    event: EventItem,
+  ): number => {
+    return Number(event.price ?? 0) || 0;
+  };
+
+  const getRevenue = (
+    event: EventItem,
+  ): number => {
+    return (
+      getPrice(event) *
+      getRegistered(event)
+    );
+  };
+
+  const getTimeState = (
+    event: EventItem,
+  ): Exclude<TimeFilter, 'all'> | 'all' => {
+    const now = new Date();
+
+    const start = getStartDate(event);
+    const end = getEndDate(event);
+
+    if (!start) {
+      return 'all';
+    }
+
+    if (
+      start <= now &&
+      end &&
+      end >= now &&
+      event.status === 'published'
+    ) {
+      return 'live';
+    }
+
+    if (start > now) {
+      return 'upcoming';
+    }
+
+    if (start <= now) {
+      return 'past';
+    }
+
+    return 'all';
+  };
+
+  /*
+   * =========================================================
+   * CATEGORIES
+   * =========================================================
+   */
+
+  const categories = useMemo(() => {
+    const values = events
+      .map((event) => event.category)
+      .filter(Boolean)
+      .map((value) => String(value));
+
+    return [
+      'all',
+      ...Array.from(new Set(values)).sort(),
+    ];
+  }, [events]);
+
+  /*
+   * =========================================================
+   * ORGANIZATIONS
+   * =========================================================
+   */
+
+  const organizations = useMemo(() => {
+    const map = new Map<string, string>();
+
+    events.forEach((event) => {
+      map.set(
+        getOrganizationKey(event),
+        getOrganizationName(event),
+      );
+    });
+
+    return [
+      {
+        key: 'all',
+        name: 'All organizations',
+      },
+      ...Array.from(map.entries())
+        .sort((a, b) =>
+          a[1].localeCompare(b[1]),
+        )
+        .map(([key, name]) => ({
+          key,
+          name,
+        })),
+    ];
+  }, [events]);
+
+  /*
+   * =========================================================
+   * FILTER + SORT
+   * =========================================================
+   */
+
+  const filteredEvents = useMemo(() => {
+    let list = [...events];
+
+    const search = q.trim().toLowerCase();
+
+    if (search) {
+      list = list.filter((event) => {
+        const searchable = [
+          event.title,
+          event.venue,
+          event.city,
+          event.category,
+          event.organizer_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return searchable.includes(search);
+      });
+    }
 
     if (status !== 'all') {
       list = list.filter(
-        (e) => e.status === status,
+        (event) =>
+          event.status.toLowerCase() ===
+          status,
       );
     }
 
-    if (q) {
-      const search = q.toLowerCase();
-
-      list = list.filter((e) =>
-        e.title?.toLowerCase().includes(search),
+    if (category !== 'all') {
+      list = list.filter(
+        (event) =>
+          event.category === category,
       );
     }
 
-    return list;
-  }, [data, q, status]);
-
-  /*
-   * Close action menu when user scrolls.
-   * The menu itself is fixed to the viewport so it
-   * never gets clipped by the table/container.
-   */
-  useEffect(() => {
-    if (openMenu === null) {
-      return;
+    if (organization !== 'all') {
+      list = list.filter(
+        (event) =>
+          getOrganizationKey(event) ===
+          organization,
+      );
     }
 
-    const handleScroll = () => {
-      setOpenMenu(null);
-      setMenuPosition(null);
-    };
-
-    window.addEventListener('scroll', handleScroll, true);
-
-    return () => {
-      window.removeEventListener(
-        'scroll',
-        handleScroll,
-        true,
+    if (timeFilter !== 'all') {
+      list = list.filter(
+        (event) =>
+          getTimeState(event) ===
+          timeFilter,
       );
-    };
-  }, [openMenu]);
-
-  /*
-   * Publish event
-   */
-  const publish = useMutation({
-    mutationFn: (id: number) =>
-      EventsAPI.publish(id),
-
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: ['events'],
-      });
-
-      toast.success('Event published');
-      setOpenMenu(null);
-      setMenuPosition(null);
-    },
-
-    onError: (error: any) => {
-      console.error(
-        'Publish event error:',
-        error,
-      );
-
-      toast.error(
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        'Failed to publish event',
-      );
-    },
-  });
-
-  /*
-   * Cancel event
-   */
-  const cancel = useMutation({
-    mutationFn: (id: number) =>
-      EventsAPI.cancel(id),
-
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: ['events'],
-      });
-
-      toast.success('Event cancelled');
-      setOpenMenu(null);
-      setMenuPosition(null);
-    },
-
-    onError: (error: any) => {
-      console.error(
-        'Cancel event error:',
-        error,
-      );
-
-      toast.error(
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        'Failed to cancel event',
-      );
-    },
-  });
-
-  /*
-   * Complete event
-   */
-  const complete = useMutation({
-    mutationFn: (id: number) =>
-      EventsAPI.complete(id),
-
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: ['events'],
-      });
-
-      toast.success(
-        'Event marked as completed',
-      );
-
-      setOpenMenu(null);
-      setMenuPosition(null);
-    },
-
-    onError: (error: any) => {
-      console.error(
-        'Complete event error:',
-        error,
-      );
-
-      toast.error(
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        'Failed to complete event',
-      );
-    },
-  });
-
-  /*
-   * Delete event
-   */
-  const remove = useMutation({
-    mutationFn: (id: number) =>
-      EventsAPI.remove(id),
-
-    onSuccess: () => {
-      qc.invalidateQueries({
-        queryKey: ['events'],
-      });
-
-      toast.success('Event deleted');
-
-      setOpenMenu(null);
-      setMenuPosition(null);
-    },
-
-    onError: (error: any) => {
-      console.error(
-        'Delete event error:',
-        error,
-      );
-
-      toast.error(
-        error?.response?.data?.message ||
-        error?.response?.data?.error ||
-        'Failed to delete event',
-      );
-    },
-  });
-
-  const handleCopyLink = async (
-    id: number,
-  ) => {
-    try {
-      await navigator.clipboard.writeText(
-        `${window.location.origin}/events/${id}`,
-      );
-
-      toast.success('Link copied');
-
-      setOpenMenu(null);
-      setMenuPosition(null);
-    } catch (error) {
-      console.error(
-        'Copy link error:',
-        error,
-      );
-
-      toast.error('Failed to copy link');
-    }
-  };
-
-  const handleDelete = (id: number) => {
-    if (confirm('Delete this event?')) {
-      remove.mutate(id);
-    }
-  };
-
-  /*
-   * Production-style action menu positioning.
-   *
-   * If there isn't enough room below the three-dot button,
-   * the menu opens ABOVE the button automatically.
-   *
-   * Fixed positioning also prevents the menu from being
-   * clipped by table/container overflow.
-   */
-  const handleMenuToggle = (
-    event: React.MouseEvent<HTMLButtonElement>,
-    id: number,
-  ) => {
-    if (openMenu === id) {
-      setOpenMenu(null);
-      setMenuPosition(null);
-      return;
     }
 
-    const buttonRect =
-      event.currentTarget.getBoundingClientRect();
+    list.sort((a, b) => {
+      const dateA =
+        getStartDate(a)?.getTime() ?? 0;
 
-    const MENU_WIDTH = 208;
-    const MENU_HEIGHT = 390;
-    const VIEWPORT_PADDING = 8;
+      const dateB =
+        getStartDate(b)?.getTime() ?? 0;
 
-    const spaceBelow =
-      window.innerHeight - buttonRect.bottom;
+      switch (sort) {
+        case 'date_desc':
+          return dateB - dateA;
 
-    const shouldOpenAbove =
-      spaceBelow < MENU_HEIGHT;
+        case 'registrations':
+          return (
+            getRegistered(b) -
+            getRegistered(a)
+          );
 
-    let top = shouldOpenAbove
-      ? buttonRect.top - MENU_HEIGHT
-      : buttonRect.bottom;
+        case 'revenue':
+          return (
+            getRevenue(b) -
+            getRevenue(a)
+          );
 
-    top = Math.max(
-      VIEWPORT_PADDING,
-      Math.min(
-        top,
-        window.innerHeight -
-        MENU_HEIGHT -
-        VIEWPORT_PADDING,
-      ),
-    );
-
-    const right = Math.max(
-      VIEWPORT_PADDING,
-      window.innerWidth -
-      buttonRect.right,
-    );
-
-    setMenuPosition({
-      top,
-      right,
+        case 'date_asc':
+        default:
+          return dateA - dateB;
+      }
     });
 
-    setOpenMenu(id);
+    return list;
+  }, [
+    events,
+    q,
+    status,
+    timeFilter,
+    category,
+    organization,
+    sort,
+  ]);
+
+  /*
+   * =========================================================
+   * ORGANIZATION GROUPING
+   * =========================================================
+   */
+
+  const organizationGroups =
+    useMemo<OrganizationGroup[]>(() => {
+      const map = new Map<
+        string,
+        OrganizationGroup
+      >();
+
+      filteredEvents.forEach((event) => {
+        const key =
+          getOrganizationKey(event);
+
+        const name =
+          getOrganizationName(event);
+
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            name,
+            events: [],
+          });
+        }
+
+        map.get(key)!.events.push(event);
+      });
+
+      return Array.from(
+        map.values(),
+      ).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+    }, [filteredEvents]);
+
+  /*
+   * =========================================================
+   * PLATFORM STATS
+   * =========================================================
+   */
+
+  const stats = useMemo(() => {
+    const now = new Date();
+
+    const published = events.filter(
+      (event) =>
+        event.status === 'published',
+    ).length;
+
+    const upcoming = events.filter(
+      (event) => {
+        const start =
+          getStartDate(event);
+
+        return (
+          start !== null &&
+          start > now
+        );
+      },
+    ).length;
+
+    const live = events.filter(
+      (event) =>
+        getTimeState(event) === 'live',
+    ).length;
+
+    const completed = events.filter(
+      (event) =>
+        event.status === 'completed',
+    ).length;
+
+    const registrations =
+      events.reduce(
+        (total, event) =>
+          total +
+          getRegistered(event),
+        0,
+      );
+
+    const revenue = events.reduce(
+      (total, event) =>
+        total +
+        getRevenue(event),
+      0,
+    );
+
+    const organizationCount =
+      new Set(
+        events.map((event) =>
+          getOrganizationKey(event),
+        ),
+      ).size;
+
+    return {
+      total: events.length,
+      published,
+      upcoming,
+      live,
+      completed,
+      registrations,
+      revenue,
+      organizationCount,
+    };
+  }, [events]);
+
+  /*
+   * =========================================================
+   * TOGGLE ORGANIZATION
+   * =========================================================
+   */
+
+  const toggleOrganization = (
+    key: string,
+  ) => {
+    setExpandedOrganizations(
+      (current) => ({
+        ...current,
+        [key]:
+          !(current[key] ?? true),
+      }),
+    );
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+  /*
+   * =========================================================
+   * EVENT ROW
+   * =========================================================
+   */
+
+  const renderEvent = (
+    event: EventItem,
+  ) => {
+    const price =
+      getPrice(event);
+
+    const registered =
+      getRegistered(event);
+
+    const capacity =
+      getCapacity(event);
+
+    const revenue =
+      getRevenue(event);
+
+    const coverImage =
+      event.cover_image || '';
+
+    const imageURL = coverImage
+      ? resolveMediaUrl(coverImage)
+      : '';
+
+    const timeState =
+      getTimeState(event);
+
+    const registrationPercent =
+      capacity > 0
+        ? Math.min(
+            100,
+            (registered /
+              capacity) *
+              100,
+          )
+        : 0;
+
+    return (
+      <div
+        key={event.id}
+        className="border-t border-ink-100 bg-white transition-colors hover:bg-ink-50/60"
+      >
+        <div className="grid grid-cols-1 gap-4 px-5 py-4 lg:grid-cols-[minmax(260px,2fr)_150px_130px_150px_130px_110px] lg:items-center">
+
+          {/* Event */}
+
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-brand-500 to-sky-500">
+              {imageURL && (
+                <img
+                  src={imageURL}
+                  alt={
+                    event.title ||
+                    'Event cover'
+                  }
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  onError={(e) => {
+                    e.currentTarget.style.display =
+                      'none';
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-ink-900">
+                {event.title ||
+                  'Untitled event'}
+              </div>
+
+              <div className="mt-1 flex items-center gap-1 text-xs text-ink-500">
+                <MapPin className="h-3 w-3 shrink-0" />
+
+                <span className="truncate">
+                  {event.venue ||
+                    'Venue not specified'}
+
+                  {event.city
+                    ? `, ${event.city}`
+                    : ''}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* When */}
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-ink-400">
+              When
+            </p>
+
+            <p className="mt-1 font-medium text-ink-800">
+              {event.start_at
+                ? fmtDate(
+                    event.start_at,
+                    'MMM d, yyyy',
+                  )
+                : '—'}
+            </p>
+
+            {timeState === 'live' && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
+                <Radio className="h-3 w-3" />
+                Live now
+              </span>
+            )}
+
+            {timeState ===
+              'upcoming' && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600">
+                <Clock3 className="h-3 w-3" />
+                Upcoming
+              </span>
+            )}
+
+            {timeState === 'past' && (
+              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400">
+                <CheckCircle2 className="h-3 w-3" />
+                Past
+              </span>
+            )}
+          </div>
+
+          {/* Category */}
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-ink-400">
+              Category
+            </p>
+
+            <p className="mt-1 font-medium text-ink-800">
+              {event.category || '—'}
+            </p>
+          </div>
+
+          {/* Registrations */}
+
+          <div>
+            <div className="flex items-center gap-1 text-xs uppercase tracking-wide text-ink-400">
+              <Users className="h-3 w-3" />
+              Reg / Cap
+            </div>
+
+            <p className="mt-1 font-semibold text-ink-900">
+              {registered}
+
+              {capacity > 0
+                ? ` / ${capacity}`
+                : ''}
+            </p>
+
+            {capacity > 0 && (
+              <div className="mt-1 h-1.5 w-24 overflow-hidden rounded-full bg-ink-100">
+                <div
+                  className="h-full rounded-full bg-brand-500"
+                  style={{
+                    width: `${registrationPercent}%`,
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Revenue */}
+
+          <div>
+            <div className="flex items-center gap-1 text-xs uppercase tracking-wide text-ink-400">
+              <IndianRupee className="h-3 w-3" />
+              Revenue
+            </div>
+
+            <p className="mt-1 font-semibold text-ink-900">
+              ₹
+              {revenue.toLocaleString(
+                'en-IN',
+                {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                },
+              )}
+            </p>
+
+            <p className="text-[11px] text-ink-400">
+              {price > 0
+                ? `₹${price.toLocaleString(
+                    'en-IN',
+                  )} / ticket`
+                : 'Free event'}
+            </p>
+          </div>
+
+          {/* Status */}
+
+          <div>
+            {event.status ===
+              'published' && (
+              <Badge tone="green">
+                Published
+              </Badge>
+            )}
+
+            {event.status === 'draft' && (
+              <Badge tone="gray">
+                Draft
+              </Badge>
+            )}
+
+            {event.status ===
+              'cancelled' && (
+              <Badge tone="red">
+                Cancelled
+              </Badge>
+            )}
+
+            {event.status ===
+              'completed' && (
+              <Badge tone="blue">
+                Completed
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  /*
+   * =========================================================
+   * LOADING
+   * =========================================================
+   */
+
+  if (isLoading) {
+    return (
+      <div className="space-y-5">
         <div>
           <h2 className="font-display text-2xl font-semibold">
-            Events
+            All Events
           </h2>
 
           <p className="text-sm text-ink-500">
-            Manage all events across your organization.
+            Monitor events across all
+            EventFlow organizations.
           </p>
         </div>
 
-        <Link to={createEventPath}>
-          <Button
-            variant="secondary"
-            leftIcon={
-              <Plus className="h-4 w-4" />
-            }
-          >
-            Create event
-          </Button>
-        </Link>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          {Array.from({
+            length: 6,
+          }).map((_, index) => (
+            <div
+              key={index}
+              className="rounded-2xl border border-ink-200 bg-white p-5"
+            >
+              <Skeleton className="h-4 w-24" />
+
+              <div className="mt-3">
+                <Skeleton className="h-8 w-20" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-5">
+          <Skeleton className="h-12 w-full" />
+
+          <div className="mt-4 space-y-3">
+            {Array.from({
+              length: 6,
+            }).map((_, index) => (
+              <Skeleton
+                key={index}
+                className="h-16 w-full"
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * =========================================================
+   * ERROR
+   * =========================================================
+   */
+
+  if (isError) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="font-display text-2xl font-semibold">
+            All Events
+          </h2>
+
+          <p className="text-sm text-ink-500">
+            Monitor events across all
+            EventFlow organizations.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+          <p className="font-semibold text-red-800">
+            Failed to load events
+          </p>
+
+          <p className="mt-1 text-sm text-red-600">
+            Please refresh the page and try
+            again.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * =========================================================
+   * NO EVENTS
+   * =========================================================
+   */
+
+  if (events.length === 0) {
+    return (
+      <div className="space-y-5">
+        <div>
+          <h2 className="font-display text-2xl font-semibold">
+            All Events
+          </h2>
+
+          <p className="text-sm text-ink-500">
+            Monitor events across all
+            EventFlow organizations.
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white">
+          <EmptyState
+            title="No events found"
+            description="There are currently no events available across the platform."
+          />
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * =========================================================
+   * MAIN
+   * =========================================================
+   */
+
+  return (
+    <div className="space-y-5">
+
+      {/* Header */}
+
+      <div>
+        <div className="flex items-center gap-2">
+          <h2 className="font-display text-2xl font-semibold text-ink-900">
+            All Events
+          </h2>
+
+          <span className="rounded-full bg-ink-100 px-2 py-0.5 text-xs font-semibold text-ink-600">
+            Read only
+          </span>
+        </div>
+
+        <p className="mt-1 text-sm text-ink-500">
+          Monitor events across all
+          EventFlow organizations.
+        </p>
+      </div>
+
+      {/* Stats */}
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <Building2 className="h-4 w-4" />
+            Organizations
+          </div>
+
+          <p className="mt-2 text-2xl font-bold text-ink-900">
+            {stats.organizationCount}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <CalendarDays className="h-4 w-4" />
+            Total Events
+          </div>
+
+          <p className="mt-2 text-2xl font-bold text-ink-900">
+            {stats.total}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <CheckCircle2 className="h-4 w-4" />
+            Published
+          </div>
+
+          <p className="mt-2 text-2xl font-bold text-emerald-600">
+            {stats.published}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <Clock3 className="h-4 w-4" />
+            Upcoming
+          </div>
+
+          <p className="mt-2 text-2xl font-bold text-sky-600">
+            {stats.upcoming}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <Users className="h-4 w-4" />
+            Registrations
+          </div>
+
+          <p className="mt-2 text-2xl font-bold text-ink-900">
+            {stats.registrations}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-ink-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-ink-400">
+            <IndianRupee className="h-4 w-4" />
+            Revenue
+          </div>
+
+          <p className="mt-2 text-xl font-bold text-ink-900">
+            ₹
+            {stats.revenue.toLocaleString(
+              'en-IN',
+              {
+                maximumFractionDigits: 0,
+              },
+            )}
+          </p>
+        </div>
+
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-3 md:flex-row md:items-center">
-        <div className="flex flex-1 items-center gap-2 rounded-lg border border-ink-200 px-3">
-          <Search className="h-4 w-4 text-ink-400" />
 
-          <input
-            value={q}
+      <div className="rounded-2xl border border-ink-200 bg-white p-3">
+        <div className="flex flex-col gap-3 xl:flex-row">
+
+          {/* Search */}
+
+          <div className="flex flex-1 items-center gap-2 rounded-lg border border-ink-200 px-3">
+            <Search className="h-4 w-4 text-ink-400" />
+
+            <input
+              value={q}
+              onChange={(e) =>
+                setQ(e.target.value)
+              }
+              placeholder="Search events, organizations, venues..."
+              className="h-10 flex-1 bg-transparent text-sm outline-none"
+            />
+          </div>
+
+          {/* Status */}
+
+          <select
+            value={status}
             onChange={(e) =>
-              setQ(e.target.value)
+              setStatus(
+                e.target.value as EventStatus,
+              )
             }
-            placeholder="Search events"
-            className="h-10 flex-1 bg-transparent text-sm outline-none"
+            className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none focus:border-brand-500"
+          >
+            <option value="all">
+              All statuses
+            </option>
+
+            <option value="published">
+              Published
+            </option>
+
+            <option value="draft">
+              Draft
+            </option>
+
+            <option value="cancelled">
+              Cancelled
+            </option>
+
+            <option value="completed">
+              Completed
+            </option>
+          </select>
+
+          {/* Time */}
+
+          <select
+            value={timeFilter}
+            onChange={(e) =>
+              setTimeFilter(
+                e.target.value as TimeFilter,
+              )
+            }
+            className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none focus:border-brand-500"
+          >
+            <option value="all">
+              All time
+            </option>
+
+            <option value="upcoming">
+              Upcoming
+            </option>
+
+            <option value="live">
+              Live now
+            </option>
+
+            <option value="past">
+              Past
+            </option>
+          </select>
+
+          {/* Organization */}
+
+          <select
+            value={organization}
+            onChange={(e) =>
+              setOrganization(
+                e.target.value,
+              )
+            }
+            className="h-10 max-w-56 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none focus:border-brand-500"
+          >
+            {organizations.map(
+              (item) => (
+                <option
+                  key={item.key}
+                  value={item.key}
+                >
+                  {item.name}
+                </option>
+              ),
+            )}
+          </select>
+
+          {/* Category */}
+
+          <select
+            value={category}
+            onChange={(e) =>
+              setCategory(e.target.value)
+            }
+            className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none focus:border-brand-500"
+          >
+            {categories.map(
+              (item) => (
+                <option
+                  key={item}
+                  value={item}
+                >
+                  {item === 'all'
+                    ? 'All categories'
+                    : item}
+                </option>
+              ),
+            )}
+          </select>
+
+          {/* Sort */}
+
+          <select
+            value={sort}
+            onChange={(e) =>
+              setSort(
+                e.target.value as SortOption,
+              )
+            }
+            className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-700 outline-none focus:border-brand-500"
+          >
+            <option value="date_asc">
+              Date: earliest
+            </option>
+
+            <option value="date_desc">
+              Date: latest
+            </option>
+
+            <option value="registrations">
+              Most registrations
+            </option>
+
+            <option value="revenue">
+              Highest revenue
+            </option>
+          </select>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-3">
+          <p className="text-xs text-ink-500">
+            Showing{' '}
+            <span className="font-semibold text-ink-800">
+              {filteredEvents.length}
+            </span>{' '}
+            of{' '}
+            <span className="font-semibold text-ink-800">
+              {events.length}
+            </span>{' '}
+            events
+          </p>
+
+          <p className="text-xs text-ink-400">
+            Owner access is read-only
+          </p>
+        </div>
+      </div>
+
+      {/* Organizations */}
+
+      {filteredEvents.length === 0 ? (
+        <div className="rounded-2xl border border-ink-200 bg-white">
+          <EmptyState
+            title="No matching events"
+            description="Try changing your search or filters."
           />
         </div>
+      ) : (
+        <div className="space-y-4">
 
-        <div className="flex gap-1 rounded-lg bg-ink-100 p-1">
-          {[
-            'all',
-            'published',
-            'draft',
-            'cancelled',
-            'completed',
-          ].map((s) => (
-            <button
-              key={s}
-              onClick={() =>
-                setStatus(s)
-              }
-              className={`rounded-md px-3 py-1 text-xs font-semibold capitalize ${status === s
-                  ? 'bg-white text-ink-900 shadow-sm'
-                  : 'text-ink-500'
-                }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
+          {organizationGroups.map(
+            (group) => {
+              const isExpanded =
+                expandedOrganizations[
+                  group.key
+                ] ?? true;
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-ink-50 text-xs uppercase tracking-wider text-ink-500">
-              <tr>
-                <th className="px-4 py-3">
-                  Event
-                </th>
-                <th>When</th>
-                <th>Category</th>
-                <th>Price</th>
-                <th>Reg / Cap</th>
-                <th>Revenue</th>
-                <th>Status</th>
-                <th></th>
-              </tr>
-            </thead>
+              const groupRegistrations =
+                group.events.reduce(
+                  (total, event) =>
+                    total +
+                    getRegistered(event),
+                  0,
+                );
 
-            <tbody className="divide-y divide-ink-100">
-              {/* Loading */}
-              {isLoading &&
-                Array.from({
-                  length: 5,
-                }).map((_, i) => (
-                  <tr key={i}>
-                    <td
-                      colSpan={8}
-                      className="p-3"
-                    >
-                      <Skeleton className="h-8" />
-                    </td>
-                  </tr>
-                ))}
+              const groupRevenue =
+                group.events.reduce(
+                  (total, event) =>
+                    total +
+                    getRevenue(event),
+                  0,
+                );
 
-              {/* Empty */}
-              {!isLoading &&
-                items.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      className="p-6"
-                    >
-                      <EmptyState
-                        title="No events yet"
-                        description="Create your first event to see it here."
-                        action={
-                          <Link
-                            to={
-                              createEventPath
-                            }
-                          >
-                            <Button variant="secondary">
-                              Create event
-                            </Button>
-                          </Link>
-                        }
-                      />
-                    </td>
-                  </tr>
-                )}
+              return (
+                <div
+                  key={group.key}
+                  className="overflow-hidden rounded-2xl border border-ink-200 bg-white"
+                >
 
-              {/* Events */}
-              {!isLoading &&
-                items.map((e) => {
-                  const price =
-                    Number(e.price) || 0;
+                  {/* Organization Header */}
 
-                  const registered =
-                    Number(
-                      e.registered_count,
-                    ) || 0;
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleOrganization(
+                        group.key,
+                      )
+                    }
+                    className="flex w-full items-center justify-between gap-4 bg-white px-5 py-4 text-left transition-colors hover:bg-ink-50"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
 
-                  const capacity =
-                    Number(e.capacity) || 0;
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+                        <Building2 className="h-5 w-5" />
+                      </div>
 
-                  const revenue =
-                    price * registered;
+                      <div className="flex min-w-0 items-center gap-2">
 
-                  return (
-                    <tr
-                      key={e.id}
-                      className="hover:bg-ink-50"
-                    >
-                      {/* Event */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 shrink-0 rounded-lg bg-gradient-to-br from-brand-500 to-sky-500" />
-
-                          <div>
-                            <div className="font-semibold text-ink-900">
-                              {e.title}
-                            </div>
-
-                            <div className="text-xs text-ink-500">
-                              {e.venue}
-                              {e.city
-                                ? `, ${e.city}`
-                                : ''}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Date */}
-                      <td>
-                        {fmtDate(
-                          e.start_at,
-                          'MMM d, yyyy',
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-ink-400" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-ink-400" />
                         )}
-                      </td>
 
-                      {/* Category */}
-                      <td>
-                        {e.category || '—'}
-                      </td>
+                        <div className="min-w-0">
+                          <h3 className="truncate font-semibold text-ink-900">
+                            {group.name}
+                          </h3>
 
-                      {/* Price */}
-                      <td>
-                        <span className="font-medium text-ink-900">
-                          {price > 0
-                            ? `₹${price.toLocaleString(
-                              'en-IN',
-                              {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              },
-                            )}`
-                            : 'Free'}
-                        </span>
-                      </td>
-
-                      {/* Registration / Capacity */}
-                      <td>
-                        <div className="font-semibold">
-                          {registered}/
-                          {capacity}
+                          <p className="mt-0.5 text-xs text-ink-500">
+                            {group.events.length}{' '}
+                            {group.events.length ===
+                            1
+                              ? 'event'
+                              : 'events'}
+                          </p>
                         </div>
+                      </div>
+                    </div>
 
-                        <div className="mt-1 h-1 w-24 overflow-hidden rounded-full bg-ink-100">
-                          <div
-                            className="h-full bg-brand-500"
-                            style={{
-                              width: `${Math.min(
-                                100,
-                                (registered /
-                                  Math.max(
-                                    1,
-                                    capacity,
-                                  )) *
-                                100,
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      </td>
+                    <div className="hidden items-center gap-8 sm:flex">
 
-                      {/* Revenue */}
-                      <td>
-                        <span className="font-medium text-ink-900">
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wide text-ink-400">
+                          Registrations
+                        </p>
+
+                        <p className="mt-0.5 text-sm font-semibold text-ink-800">
+                          {groupRegistrations}
+                        </p>
+                      </div>
+
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wide text-ink-400">
+                          Revenue
+                        </p>
+
+                        <p className="mt-0.5 text-sm font-semibold text-ink-800">
                           ₹
-                          {revenue.toLocaleString(
+                          {groupRevenue.toLocaleString(
                             'en-IN',
                             {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
+                              maximumFractionDigits: 0,
                             },
                           )}
-                        </span>
-                      </td>
+                        </p>
+                      </div>
+                    </div>
+                  </button>
 
-                      {/* Status */}
-                      <td>
-                        <Badge
-                          tone={
-                            e.status ===
-                              'published'
-                              ? 'green'
-                              : e.status ===
-                                'draft'
-                                ? 'gray'
-                                : e.status ===
-                                  'cancelled'
-                                  ? 'red'
-                                  : 'blue'
-                          }
-                        >
-                          {e.status}
-                        </Badge>
-                      </td>
+                  {/* Events Dropdown */}
 
-                      {/* Actions */}
-                      <td className="pr-4">
-                        <button
-                          type="button"
-                          onClick={(event) =>
-                            handleMenuToggle(
-                              event,
-                              e.id,
-                            )
-                          }
-                          className="rounded-md p-1 hover:bg-ink-100"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
+                  {isExpanded && (
+                    <div className="border-t border-ink-200">
+
+                      {/* Desktop headings */}
+
+                      <div className="hidden grid-cols-[minmax(260px,2fr)_150px_130px_150px_130px_110px] bg-ink-50 px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-ink-400 lg:grid">
+                        <div>Event</div>
+                        <div>When</div>
+                        <div>Category</div>
+                        <div>Reg / Cap</div>
+                        <div>Revenue</div>
+                        <div>Status</div>
+                      </div>
+
+                      {group.events.map(
+                        (event) =>
+                          renderEvent(event),
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            },
+          )}
+
         </div>
-      </div>
-
-      {/* Fixed action menu */}
-      {openMenu !== null &&
-        menuPosition &&
-        (() => {
-          const event = items.find(
-            (item) =>
-              item.id === openMenu,
-          );
-
-          if (!event) {
-            return null;
-          }
-
-          const e = event;
-
-          return (
-            <div
-              className="fixed z-[100] w-52 rounded-xl border border-ink-100 bg-white p-1 shadow-2xl ring-1 ring-black/5"
-              style={{
-                top: menuPosition.top,
-                right: menuPosition.right,
-              }}
-              onMouseLeave={() => {
-                setOpenMenu(null);
-                setMenuPosition(null);
-              }}
-            >
-              {/* Public page */}
-              <Link
-                to={`/events/${e.id}`}
-                target="_blank"
-                className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-ink-100"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setMenuPosition(null);
-                }}
-              >
-                <ExternalLink className="h-4 w-4" />
-                View public page
-              </Link>
-
-              {/* Edit */}
-              <Link
-                to={`${eventsBasePath}/${e.id}/edit`}
-                className="flex items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-ink-100"
-                onClick={() => {
-                  setOpenMenu(null);
-                  setMenuPosition(null);
-                }}
-              >
-                <Edit2 className="h-4 w-4" />
-                Edit
-              </Link>
-
-              {/* Copy */}
-              <button
-                type="button"
-                onClick={() =>
-                  handleCopyLink(e.id)
-                }
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-ink-100"
-              >
-                <Copy className="h-4 w-4" />
-                Copy link
-              </button>
-
-              <div className="my-1 border-t border-ink-100" />
-
-              {/* Publish */}
-              {e.status !==
-                'published' && (
-                  <button
-                    type="button"
-                    disabled={
-                      publish.isPending
-                    }
-                    onClick={() =>
-                      publish.mutate(e.id)
-                    }
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <PlayCircle className="h-4 w-4" />
-
-                    {publish.isPending
-                      ? 'Publishing...'
-                      : 'Publish'}
-                  </button>
-                )}
-
-              {/* Cancel */}
-              {e.status ===
-                'published' && (
-                  <button
-                    type="button"
-                    disabled={
-                      cancel.isPending
-                    }
-                    onClick={() =>
-                      cancel.mutate(e.id)
-                    }
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-orange-700 hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <XCircle className="h-4 w-4" />
-
-                    {cancel.isPending
-                      ? 'Cancelling...'
-                      : 'Cancel'}
-                  </button>
-                )}
-
-              {/* Complete */}
-              {e.status !==
-                'completed' && (
-                  <button
-                    type="button"
-                    disabled={
-                      complete.isPending
-                    }
-                    onClick={() =>
-                      complete.mutate(e.id)
-                    }
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-ink-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <CheckSquare className="h-4 w-4" />
-
-                    {complete.isPending
-                      ? 'Completing...'
-                      : 'Mark complete'}
-                  </button>
-                )}
-
-              {/* Delete */}
-              <button
-                type="button"
-                disabled={
-                  remove.isPending
-                }
-                onClick={() =>
-                  handleDelete(e.id)
-                }
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" />
-
-                {remove.isPending
-                  ? 'Deleting...'
-                  : 'Delete'}
-              </button>
-            </div>
-          );
-        })()}
+      )}
     </div>
   );
 }

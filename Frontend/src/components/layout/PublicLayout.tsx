@@ -2,6 +2,7 @@ import {
   Link,
   NavLink,
   Outlet,
+  useLocation,
   useNavigate,
 } from 'react-router-dom';
 
@@ -18,7 +19,7 @@ import {
   Settings,
 } from 'lucide-react';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { NotificationsAPI } from '../../lib/queries';
@@ -29,8 +30,7 @@ import {
 
 export function PublicLayout() {
   const [open, setOpen] = useState(false);
-  const [profileOpen, setProfileOpen] =
-    useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const {
     user,
@@ -40,6 +40,136 @@ export function PublicLayout() {
   } = useAuth();
 
   const nav = useNavigate();
+  const location = useLocation();
+
+  /*
+   * ------------------------------------------------------------
+   * Role configuration
+   * ------------------------------------------------------------
+   */
+
+  const normalizedRole = role?.toLowerCase();
+
+  const isOwner =
+    normalizedRole === 'owner' ||
+    normalizedRole === 'platform_owner';
+
+  const isAdmin = normalizedRole === 'admin';
+
+  const isStaff = normalizedRole === 'staff';
+
+  const isRestrictedRole =
+    isOwner || isAdmin || isStaff;
+
+  /*
+   * ------------------------------------------------------------
+   * Dashboard destination
+   * ------------------------------------------------------------
+   */
+
+  const dashboardPath = isOwner
+    ? '/dashboard'
+    : isAdmin
+      ? '/admin'
+      : isStaff
+        ? '/staff'
+        : null;
+
+  const dashboardLabel = isOwner
+    ? 'Owner Dashboard'
+    : isAdmin
+      ? 'Admin Dashboard'
+      : isStaff
+        ? 'Staff Console'
+        : null;
+
+  /*
+   * ------------------------------------------------------------
+   * Prevent restricted users from accessing public pages
+   *
+   * Owner/Admin/Staff should never remain on:
+   * /
+   * /events
+   * /organizers
+   * /login
+   * /register
+   * ------------------------------------------------------------
+   */
+
+  useEffect(() => {
+    if (!user || !isRestrictedRole || !dashboardPath) {
+      return;
+    }
+
+    const publicPaths = [
+      '/',
+      '/events',
+      '/organizers',
+      '/login',
+      '/register',
+    ];
+
+    const isPublicPath =
+      publicPaths.includes(location.pathname);
+
+    if (isPublicPath && location.pathname !== dashboardPath) {
+      nav(dashboardPath, {
+        replace: true,
+      });
+    }
+  }, [
+    user,
+    isRestrictedRole,
+    dashboardPath,
+    location.pathname,
+    nav,
+  ]);
+
+  /*
+   * ------------------------------------------------------------
+   * Navigation
+   *
+   * Restricted users should not see public navigation.
+   * ------------------------------------------------------------
+   */
+
+  const navItems = isRestrictedRole
+    ? []
+    : [
+      {
+        to: '/',
+        label: 'Home',
+        end: true,
+      },
+      {
+        to: '/events',
+        label: 'Browse Events',
+      },
+      {
+        to: '/organizers',
+        label: 'For Organizers',
+      },
+    ];
+
+  /*
+   * ------------------------------------------------------------
+   * Account label
+   * ------------------------------------------------------------
+   */
+
+  const accountLabel = isOwner
+    ? 'PLATFORM OWNER'
+    : isAdmin
+      ? 'ADMIN ACCOUNT'
+      : isStaff
+        ? 'STAFF ACCOUNT'
+        : 'USER ACCOUNT';
+
+  /*
+   * ------------------------------------------------------------
+   * Notifications
+   * ------------------------------------------------------------
+   */
 
   const { data: notifs } = useQuery({
     queryKey: ['notifications', user?.id],
@@ -51,13 +181,9 @@ export function PublicLayout() {
     refetchInterval: 30_000,
   });
 
-  const notificationList = Array.isArray(
-    notifs
-  )
+  const notificationList = Array.isArray(notifs)
     ? notifs
-    : Array.isArray(
-      (notifs as any)?.data
-    )
+    : Array.isArray((notifs as any)?.data)
       ? (notifs as any).data
       : Array.isArray(
         (notifs as any)?.notifications
@@ -65,74 +191,26 @@ export function PublicLayout() {
         ? (notifs as any).notifications
         : [];
 
-  const unread =
-    notificationList.filter(
-      (notification) =>
-        notification.status === 'unread'
-    ).length;
-
-  const navItems = [
-    {
-      to: '/',
-      label: 'Home',
-      end: true,
-    },
-    {
-      to: '/events',
-      label: 'Browse Events',
-    },
-    {
-      to: '/organizers',
-      label: 'For Organizers',
-    },
-  ];
+  const unread = notificationList.filter(
+    (notification) =>
+      notification.status === 'unread'
+  ).length;
 
   /*
-   * Account label:
-   *
-   * platform_owner -> PLATFORM OWNER
-   * admin          -> ADMIN ACCOUNT
-   * staff          -> STAFF ACCOUNT
-   * user           -> USER ACCOUNT
+   * ------------------------------------------------------------
+   * Render
+   * ------------------------------------------------------------
    */
-  const accountLabel =
-    role === 'owner'
-      ? 'PLATFORM OWNER'
-      : role === 'admin'
-        ? 'ADMIN ACCOUNT'
-        : role === 'staff'
-          ? 'STAFF ACCOUNT'
-          : 'USER ACCOUNT';
-
-  /*
-   * Dashboard destination based on role.
-   */
-  const dashboardPath =
-    role === 'owner'
-      ? '/dashboard'
-      : role === 'admin'
-        ? '/admin'
-        : role === 'staff'
-          ? '/staff'
-          : null;
-
-  const dashboardLabel =
-    role === 'owner'
-      ? 'Owner Dashboard'
-      : role === 'admin'
-        ? 'Admin Dashboard'
-        : role === 'staff'
-          ? 'Staff Console'
-          : null;
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-ink-100 bg-white/85 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-4 sm:px-6">
+
           {/* Logo */}
 
           <Link
-            to="/"
+            to={isRestrictedRole && dashboardPath ? dashboardPath : '/'}
             className="flex items-center gap-2"
           >
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-brand-500 to-sky-500 text-white shadow-sm">
@@ -146,34 +224,39 @@ export function PublicLayout() {
 
           {/* Desktop Navigation */}
 
-          <nav className="hidden items-center gap-1 md:flex">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${isActive
-                    ? 'bg-ink-100 text-ink-900'
-                    : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
+          {!isRestrictedRole && (
+            <nav className="hidden items-center gap-1 md:flex">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${isActive
+                      ? 'bg-ink-100 text-ink-900'
+                      : 'text-ink-600 hover:bg-ink-50 hover:text-ink-900'
+                    }`
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
+
             {/* Search */}
 
-            <button
-              onClick={() => nav('/events')}
-              className="hidden h-9 items-center gap-2 rounded-full border border-ink-200 px-3 text-xs text-ink-500 hover:border-ink-400 sm:flex"
-            >
-              <Search className="h-3.5 w-3.5" />
-              Search events...
-            </button>
+            {!isRestrictedRole && (
+              <button
+                onClick={() => nav('/events')}
+                className="hidden h-9 items-center gap-2 rounded-full border border-ink-200 px-3 text-xs text-ink-500 hover:border-ink-400 sm:flex"
+              >
+                <Search className="h-3.5 w-3.5" />
+                Search events...
+              </button>
+            )}
 
             {user ? (
               <>
@@ -204,8 +287,7 @@ export function PublicLayout() {
                     className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3 hover:border-ink-400"
                   >
                     <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-900 text-xs font-bold uppercase text-white">
-                      {displayName
-                        .slice(0, 1)}
+                      {displayName.slice(0, 1)}
                     </div>
 
                     <span className="hidden text-sm font-medium text-ink-800 sm:inline">
@@ -230,9 +312,7 @@ export function PublicLayout() {
                         }}
                         className="absolute right-0 mt-2 w-64 overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl"
                         onMouseLeave={() =>
-                          setProfileOpen(
-                            false
-                          )
+                          setProfileOpen(false)
                         }
                       >
                         {/* Account information */}
@@ -252,6 +332,7 @@ export function PublicLayout() {
                         </div>
 
                         <div className="py-1 text-sm">
+
                           {/* Everyone */}
 
                           <MenuLink
@@ -263,9 +344,9 @@ export function PublicLayout() {
                             Profile & Settings
                           </MenuLink>
 
-                          {/* Normal users + organization users */}
+                          {/* Normal users only */}
 
-                          {role !== 'owner' && (
+                          {!isRestrictedRole && (
                             <MenuLink
                               to="/my-registrations"
                               icon={
@@ -281,24 +362,18 @@ export function PublicLayout() {
                           {dashboardPath &&
                             dashboardLabel && (
                               <MenuLink
-                                to={
-                                  dashboardPath
-                                }
+                                to={dashboardPath}
                                 icon={
-                                  role ===
-                                    'owner' ? (
+                                  isOwner ? (
                                     <LayoutDashboard className="h-4 w-4" />
-                                  ) : role ===
-                                    'admin' ? (
+                                  ) : isAdmin ? (
                                     <Settings className="h-4 w-4" />
                                   ) : (
                                     <Shield className="h-4 w-4" />
                                   )
                                 }
                               >
-                                {
-                                  dashboardLabel
-                                }
+                                {dashboardLabel}
                               </MenuLink>
                             )}
                         </div>
@@ -308,9 +383,9 @@ export function PublicLayout() {
                         <button
                           onClick={async () => {
                             await signOut();
-                            setProfileOpen(
-                              false
-                            );
+
+                            setProfileOpen(false);
+
                             nav('/login', {
                               replace: true,
                             });
@@ -347,25 +422,27 @@ export function PublicLayout() {
 
             {/* Mobile menu */}
 
-            <button
-              className="rounded-lg p-2 text-ink-600 hover:bg-ink-100 md:hidden"
-              onClick={() =>
-                setOpen((value) => !value)
-              }
-            >
-              {open ? (
-                <X className="h-5 w-5" />
-              ) : (
-                <Menu className="h-5 w-5" />
-              )}
-            </button>
+            {!isRestrictedRole && (
+              <button
+                className="rounded-lg p-2 text-ink-600 hover:bg-ink-100 md:hidden"
+                onClick={() =>
+                  setOpen((value) => !value)
+                }
+              >
+                {open ? (
+                  <X className="h-5 w-5" />
+                ) : (
+                  <Menu className="h-5 w-5" />
+                )}
+              </button>
+            )}
           </div>
         </div>
 
         {/* Mobile Navigation */}
 
         <AnimatePresence>
-          {open && (
+          {open && !isRestrictedRole && (
             <motion.div
               initial={{ height: 0 }}
               animate={{ height: 'auto' }}

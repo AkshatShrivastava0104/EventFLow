@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, SlidersHorizontal, X } from 'lucide-react';
 import { EventsAPI } from '../../lib/queries';
+import { resolveMediaUrl } from '../../lib/api';
 import { EventCard } from '../../components/shared/EventCard';
 import { SkeletonCard } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -42,21 +43,45 @@ export function BrowseEvents() {
   const {
     data,
     isLoading,
+    isFetching,
   } = useQuery({
     queryKey: [
       'events',
-      'all',
+      'browse',
       {
+        page,
+        page_size: perPage,
         q,
         category,
+        city,
+        price: priceFilter,
+        sort,
         status: 'published',
       },
     ],
+
     queryFn: () =>
       EventsAPI.list({
-        search: q || undefined,
+        page,
+        page_size: perPage,
+
+        // Backend expects `q`.
+        q: q || undefined,
+
         category:
-          category !== 'All' ? category : undefined,
+          category !== 'All'
+            ? category
+            : undefined,
+
+        city: city || undefined,
+
+        price:
+          priceFilter !== 'any'
+            ? priceFilter
+            : undefined,
+
+        sort,
+
         status: 'published',
       }),
   });
@@ -68,10 +93,9 @@ export function BrowseEvents() {
    * 2. { data: Event[], meta: {...} }
    * 3. { events: Event[], pagination: {...} }
    *
-   * Always normalize it to an array before doing
-   * filter / sort / spread / map operations.
+   * Normalize it to an array.
    */
-  const eventItems = useMemo(() => {
+  const eventItems = (() => {
     if (Array.isArray(data)) {
       return data;
     }
@@ -92,84 +116,59 @@ export function BrowseEvents() {
     }
 
     return [];
-  }, [data]);
+  })();
 
-  const filtered = useMemo(() => {
-    let items = [...eventItems];
+  /*
+   * Backend now handles:
+   *
+   * - search
+   * - category
+   * - city
+   * - price
+   * - sort
+   * - pagination
+   *
+   * So DO NOT filter/sort locally here.
+   */
+  const filtered = eventItems;
 
-    if (city) {
-      items = items.filter((e) =>
-        e.city
-          ?.toLowerCase()
-          .includes(city.toLowerCase())
-      );
-    }
-
-    if (priceFilter === 'free') {
-      items = items.filter(
-        (e) => Number(e.price || 0) === 0
-      );
-    }
-
-    if (priceFilter === 'paid') {
-      items = items.filter(
-        (e) => Number(e.price || 0) > 0
-      );
-    }
-
-    switch (sort) {
-      case 'price-asc':
-        items = [...items].sort(
-          (a, b) =>
-            (a.price || 0) - (b.price || 0)
-        );
-        break;
-
-      case 'price-desc':
-        items = [...items].sort(
-          (a, b) =>
-            (b.price || 0) - (a.price || 0)
-        );
-        break;
-
-      case 'popular':
-        items = [...items].sort(
-          (a, b) =>
-            (b.registered_count || 0) -
-            (a.registered_count || 0)
-        );
-        break;
-
-      default:
-        items = [...items].sort(
-          (a, b) =>
-            new Date(a.start_at).getTime() -
-            new Date(b.start_at).getTime()
-        );
-        break;
-    }
-
-    return items;
-  }, [
-    eventItems,
-    city,
-    priceFilter,
-    sort,
-  ]);
+  /*
+   * Prefer backend pagination when available.
+   *
+   * If EventsAPI.list() unwraps pagination and only returns
+   * Event[], this falls back to the current page.
+   */
+  const backendPagination =
+    data &&
+      typeof data === 'object' &&
+      !Array.isArray(data)
+      ? (
+        data as {
+          pagination?: {
+            page?: number;
+            limit?: number;
+            total?: number;
+            total_pages?: number;
+          };
+        }
+      ).pagination
+      : undefined;
 
   const totalPages = Math.max(
     1,
-    Math.ceil(filtered.length / perPage)
+    backendPagination?.total_pages ??
+    (filtered.length === perPage
+      ? page + 1
+      : page),
   );
 
-  const pageItems = filtered.slice(
-    (page - 1) * perPage,
-    page * perPage
-  );
+  const totalEvents =
+    backendPagination?.total ??
+    filtered.length;
 
   const updateParam = (
     key: string,
-    value: string
+    value: string,
   ) => {
     const p = new URLSearchParams(params);
 
@@ -191,7 +190,11 @@ export function BrowseEvents() {
     setPage(1);
   };
 
-  const activeChips: [string, string, string][] = [];
+  const activeChips: [
+    string,
+    string,
+    string,
+  ][] = [];
 
   if (q) {
     activeChips.push([
@@ -201,7 +204,10 @@ export function BrowseEvents() {
     ]);
   }
 
-  if (category && category !== 'All') {
+  if (
+    category &&
+    category !== 'All'
+  ) {
     activeChips.push([
       'category',
       category,
@@ -254,17 +260,36 @@ export function BrowseEvents() {
           <input
             value={q}
             onChange={(e) =>
-              updateParam('q', e.target.value)
+              updateParam(
+                'q',
+                e.target.value,
+              )
             }
             placeholder="Search event titles"
             className="h-10 flex-1 bg-transparent text-sm outline-none"
           />
+
+          {q && (
+            <button
+              type="button"
+              onClick={() =>
+                updateParam('q', '')
+              }
+              className="rounded p-1 text-ink-400 hover:text-ink-700"
+              aria-label="Clear search"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <input
           value={city}
           onChange={(e) =>
-            updateParam('city', e.target.value)
+            updateParam(
+              'city',
+              e.target.value,
+            )
           }
           placeholder="City"
           className="h-10 w-full rounded-lg border border-ink-200 px-3 text-sm outline-none md:w-36"
@@ -275,7 +300,7 @@ export function BrowseEvents() {
           onChange={(e) =>
             updateParam(
               'price',
-              e.target.value
+              e.target.value,
             )
           }
           className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm outline-none"
@@ -283,9 +308,11 @@ export function BrowseEvents() {
           <option value="any">
             Any price
           </option>
+
           <option value="free">
             Free only
           </option>
+
           <option value="paid">
             Paid only
           </option>
@@ -296,7 +323,7 @@ export function BrowseEvents() {
           onChange={(e) =>
             updateParam(
               'sort',
-              e.target.value
+              e.target.value,
             )
           }
           className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm outline-none"
@@ -312,17 +339,18 @@ export function BrowseEvents() {
         </select>
       </div>
 
-      {/* Categories chip row */}
+      {/* Categories */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <SlidersHorizontal className="h-4 w-4 text-ink-400" />
 
         {CATEGORIES.map((c) => (
           <button
             key={c}
+            type="button"
             onClick={() =>
               updateParam(
                 'category',
-                c
+                c,
               )
             }
             className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${category === c
@@ -335,35 +363,37 @@ export function BrowseEvents() {
         ))}
       </div>
 
+      {/* Active filters */}
       {activeChips.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {activeChips.map(
-            ([k, l, reset]) => (
+            ([key, label, reset]) => (
               <button
-                key={k}
+                key={key}
+                type="button"
                 onClick={() =>
                   updateParam(
-                    k,
-                    reset
+                    key,
+                    reset,
                   )
                 }
                 className="inline-flex items-center gap-1 rounded-full border border-brand-200 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700"
               >
-                {l}
+                {label}
 
                 <X className="h-3 w-3" />
               </button>
-            )
+            ),
           )}
         </div>
       )}
 
-      {/* Results */}
+      {/* Results header */}
       <div className="mt-6 flex items-center justify-between">
         <p className="text-sm text-ink-500">
-          {isLoading
+          {isLoading || isFetching
             ? 'Loading events…'
-            : `${filtered.length} event${filtered.length === 1
+            : `${totalEvents} event${totalEvents === 1
               ? ''
               : 's'
             } found`}
@@ -374,6 +404,7 @@ export function BrowseEvents() {
         </Badge>
       </div>
 
+      {/* Results */}
       <div className="mt-4 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {isLoading ? (
           Array.from({
@@ -381,7 +412,7 @@ export function BrowseEvents() {
           }).map((_, i) => (
             <SkeletonCard key={i} />
           ))
-        ) : pageItems.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="col-span-full">
             <EmptyState
               title="No events match your filters"
@@ -389,25 +420,50 @@ export function BrowseEvents() {
             />
           </div>
         ) : (
-          pageItems.map((e) => (
-            <EventCard
-              key={e.id}
-              event={e}
-            />
-          ))
+          filtered.map((e) => {
+            const coverImage =
+              e?.cover_image ||
+              e?.cover_media_url ||
+              '';
+
+            const eventWithCover = {
+              ...e,
+
+              cover_image: coverImage
+                ? resolveMediaUrl(
+                  coverImage,
+                )
+                : '',
+
+              cover_media_url:
+                coverImage
+                  ? resolveMediaUrl(
+                    coverImage,
+                  )
+                  : '',
+
+              cover_media_type: 'image',
+            };
+
+            return (
+              <EventCard
+                key={e.id}
+                event={eventWithCover}
+              />
+            );
+          })
         )}
       </div>
 
+      {/* Pagination */}
       {totalPages > 1 && (
         <div className="mt-8 flex items-center justify-center gap-2">
           <button
+            type="button"
             disabled={page === 1}
             onClick={() =>
               setPage((p) =>
-                Math.max(
-                  1,
-                  p - 1
-                )
+                Math.max(1, p - 1),
               )
             }
             className="h-9 rounded-lg border border-ink-200 bg-white px-4 text-sm disabled:opacity-50"
@@ -417,22 +473,28 @@ export function BrowseEvents() {
 
           {Array.from({
             length: totalPages,
-          }).map((_, i) => (
-            <button
-              key={i}
-              onClick={() =>
-                setPage(i + 1)
-              }
-              className={`h-9 w-9 rounded-lg text-sm font-semibold ${page === i + 1
-                  ? 'bg-ink-900 text-white'
-                  : 'border border-ink-200 bg-white'
-                }`}
-            >
-              {i + 1}
-            </button>
-          ))}
+          }).map((_, i) => {
+            const pageNumber = i + 1;
+
+            return (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() =>
+                  setPage(pageNumber)
+                }
+                className={`h-9 w-9 rounded-lg text-sm font-semibold ${page === pageNumber
+                    ? 'bg-ink-900 text-white'
+                    : 'border border-ink-200 bg-white'
+                  }`}
+              >
+                {pageNumber}
+              </button>
+            );
+          })}
 
           <button
+            type="button"
             disabled={
               page === totalPages
             }
@@ -440,8 +502,8 @@ export function BrowseEvents() {
               setPage((p) =>
                 Math.min(
                   totalPages,
-                  p + 1
-                )
+                  p + 1,
+                ),
               )
             }
             className="h-9 rounded-lg border border-ink-200 bg-white px-4 text-sm disabled:opacity-50"

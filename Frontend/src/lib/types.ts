@@ -21,11 +21,23 @@ export interface EventItem {
   currency: string;
   capacity: number;
   registered_count: number;
+
+  // Registration state for the currently authenticated user.
+  // This is optional because public event APIs may not include it.
+  is_registered?: boolean;
+  registration_status?:
+  | 'registered'
+  | 'pending'
+  | 'cancelled'
+  | 'waitlisted'
+  | null;
+
   status:
   | 'draft'
   | 'published'
   | 'cancelled'
   | 'completed';
+
   organizer_id: string;
   organizer_name?: string;
   org_id: number | null;
@@ -41,34 +53,59 @@ export interface Registration {
   user_email: string;
   user_name: string;
   user_phone?: string;
+
   ticket_type: string;
   quantity: number;
   total_amount: number;
+
   status:
+  | 'registered'
   | 'confirmed'
   | 'cancelled'
   | 'pending'
+  | 'waitlisted'
   | 'waitlist';
+
   payment_status:
   | 'unpaid'
   | 'paid'
   | 'free'
   | 'refunded';
+
   payment_id?: string;
   created_at: string;
   event?: EventItem;
 }
 
 export interface Ticket {
-  id: string;
+  id: string | number;
   registration_id: number;
-  ticket_code: string;
-  attendee_name: string;
-  attendee_email: string;
+
+  // Backend ticket fields.
+  ticket_number?: string;
+  qr_code?: string;
+
+  // Existing frontend-compatible field.
+  ticket_code?: string;
+
+  attendee_name?: string;
+  attendee_email?: string;
+
   checked_in: boolean;
   checked_in_at: string | null;
+
   event?: EventItem;
   registration?: Registration;
+
+  // Backend ticket response fields.
+  event_id?: number;
+  event_title?: string;
+  event_venue?: string;
+  event_status?: string;
+  event_start?: string;
+  event_end?: string;
+  registration_status?: string;
+  created_at?: string;
 }
 
 export interface Organization {
@@ -99,14 +136,16 @@ export interface StaffMember {
 
 export interface NotificationItem {
   id: number;
-  user_id: string;
+  user_id: number;
   title: string;
   message: string;
+
   type:
   | 'info'
   | 'success'
   | 'warning'
   | 'event';
+
   read: boolean;
   link: string | null;
   created_at: string;
@@ -115,7 +154,7 @@ export interface NotificationItem {
 export interface WaitlistEntry {
   id: number;
   event_id: number;
-  user_id: string;
+  user_id: number;
   user_email: string;
   user_name: string;
   position: number;

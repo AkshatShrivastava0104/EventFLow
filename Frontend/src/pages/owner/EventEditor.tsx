@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { EventsAPI, OrgsAPI } from '../../lib/queries';
+import { resolveMediaUrl } from '../../lib/api';
 import {
   Input,
   TextArea,
@@ -15,6 +16,9 @@ import {
   ArrowLeft,
   Sparkles,
   Trash2,
+  Upload,
+  X,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -34,14 +38,20 @@ const empty = {
   description: '',
   category: 'Music',
   cover_image: '',
+  cover_media_url: '',
+  cover_media_type: 'image',
   venue: '',
   address: '',
   city: '',
-  country: 'USA',
+  country: 'India',
   start_at: '',
   end_at: '',
+  registration_deadline: '',
   price: 0,
   capacity: 100,
+  max_tickets_per_user: 1,
+  allow_waitlist: false,
+  visibility: 'public',
   status: 'draft' as const,
   tags: [] as string[],
   featured: false,
@@ -52,7 +62,6 @@ export function EventEditor() {
   const nav = useNavigate();
 
   const {
-    user,
     role,
   } = useAuth();
 
@@ -60,6 +69,17 @@ export function EventEditor() {
 
   const [form, setForm] = useState<any>(empty);
   const [tagInput, setTagInput] = useState('');
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [selectedMedia, setSelectedMedia] =
+    useState<File | null>(null);
+
+  const [mediaPreview, setMediaPreview] =
+    useState<string>('');
+
+  const [mediaUploading, setMediaUploading] =
+    useState(false);
 
   const {
     data: organizations = [],
@@ -82,6 +102,23 @@ export function EventEditor() {
   });
 
   useEffect(() => {
+    if (!isEdit) {
+      if (mediaPreview) {
+        URL.revokeObjectURL(mediaPreview);
+      }
+
+      setSelectedMedia(null);
+      setMediaPreview('');
+      setForm({ ...empty });
+      setTagInput('');
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      return;
+    }
+
     if (!existing) {
       return;
     }
@@ -98,6 +135,27 @@ export function EventEditor() {
       eventData.end_at ||
       '';
 
+    const registrationDeadline =
+      eventData.registration_deadline || '';
+
+    const existingMediaURL =
+      eventData.cover_media_url ||
+      eventData.cover_image ||
+      '';
+
+    const existingMediaType = 'image';
+
+    if (mediaPreview) {
+      URL.revokeObjectURL(mediaPreview);
+    }
+
+    setSelectedMedia(null);
+    setMediaPreview('');
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     setForm({
       ...empty,
 
@@ -105,12 +163,15 @@ export function EventEditor() {
       slug: eventData.slug || '',
       description: eventData.description || '',
       category: eventData.category || 'Music',
-      cover_image: eventData.cover_image || '',
+
+      cover_image: existingMediaURL,
+      cover_media_url: existingMediaURL,
+      cover_media_type: existingMediaType,
 
       venue: eventData.venue || '',
       address: eventData.address || '',
       city: eventData.city || '',
-      country: eventData.country || 'USA',
+      country: eventData.country || 'India',
 
       start_at: startValue
         ? new Date(startValue)
@@ -124,6 +185,13 @@ export function EventEditor() {
           .slice(0, 16)
         : '',
 
+      registration_deadline:
+        registrationDeadline
+          ? new Date(registrationDeadline)
+            .toISOString()
+            .slice(0, 16)
+          : '',
+
       price:
         eventData.price !== undefined &&
           eventData.price !== null
@@ -136,15 +204,39 @@ export function EventEditor() {
           ? Number(eventData.capacity)
           : 100,
 
-      status: eventData.status || 'draft',
+      max_tickets_per_user:
+        eventData.max_tickets_per_user !==
+          undefined &&
+          eventData.max_tickets_per_user !== null
+          ? Number(eventData.max_tickets_per_user)
+          : 1,
 
-      tags: Array.isArray(eventData.tags)
-        ? eventData.tags
-        : [],
+      allow_waitlist:
+        !!eventData.allow_waitlist,
 
-      featured: !!eventData.featured,
+      visibility:
+        eventData.visibility || 'public',
+
+      status:
+        eventData.status || 'draft',
+
+      tags:
+        Array.isArray(eventData.tags)
+          ? eventData.tags
+          : [],
+
+      featured:
+        !!eventData.featured,
     });
-  }, [existing]);
+  }, [existing, id, isEdit]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaPreview) {
+        URL.revokeObjectURL(mediaPreview);
+      }
+    };
+  }, [mediaPreview]);
 
   const set = (
     key: string,
@@ -156,166 +248,514 @@ export function EventEditor() {
     }));
   };
 
+  /*
+   * ========================================================
+   * MEDIA SELECTION
+   * ========================================================
+   */
+
+  const handleMediaSelect = (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    const allowedImageTypes = new Set([
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    ]);
+
+    if (!allowedImageTypes.has(file.type)) {
+      toast.error(
+        'Please select a JPG, JPEG, PNG, WEBP, or GIF image.',
+      );
+
+      event.target.value = '';
+      return;
+    }
+
+    const maxSize = 100 * 1024 * 1024;
+
+    if (file.size > maxSize) {
+      toast.error(
+        'File size cannot exceed 100 MB.',
+      );
+
+      event.target.value = '';
+      return;
+    }
+
+    if (mediaPreview) {
+      URL.revokeObjectURL(mediaPreview);
+    }
+
+    const previewURL =
+      URL.createObjectURL(file);
+
+    setSelectedMedia(file);
+    setMediaPreview(previewURL);
+
+    setForm((current: any) => ({
+      ...current,
+      cover_media_type: 'image',
+    }));
+  };
+
+  const removeSelectedMedia = () => {
+    if (mediaPreview) {
+      URL.revokeObjectURL(mediaPreview);
+    }
+
+    setSelectedMedia(null);
+    setMediaPreview('');
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  /*
+   * Upload the selected file after the event exists.
+   *
+   * This is intentionally separate from event creation
+   * because the backend upload endpoint needs event_id.
+   */
+  const uploadMedia = async (
+    eventId: number,
+  ) => {
+    if (!selectedMedia) {
+      return null;
+    }
+
+    setMediaUploading(true);
+
+    try {
+      const result =
+        await EventsAPI.uploadMedia(
+          eventId,
+          selectedMedia,
+        );
+
+      const mediaURL =
+        result?.url ||
+        result?.media_url ||
+        '';
+
+
+      const mediaType = 'image';
+
+      if (!mediaURL) {
+        throw new Error(
+          'Upload succeeded but no media URL was returned.',
+        );
+      }
+
+      setForm((current: any) => ({
+        ...current,
+        cover_image: mediaURL,
+        cover_media_url: mediaURL,
+        cover_media_type: mediaType,
+      }));
+
+      setSelectedMedia(null);
+      setMediaPreview('');
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      toast.success(
+        'Event cover image uploaded successfully',
+      );
+
+      return {
+        url: mediaURL,
+        media_type: mediaType,
+      };
+    } finally {
+      setMediaUploading(false);
+    }
+  };
+
+  /*
+   * ========================================================
+   * BUILD PAYLOAD
+   * ========================================================
+   */
+
+  const buildPayload = () => {
+    if (
+      role === 'admin' &&
+      !organization?.id
+    ) {
+      throw new Error(
+        'No organization found for this account.',
+      );
+    }
+
+    if (!form.title?.trim()) {
+      throw new Error(
+        'Event title is required.',
+      );
+    }
+
+    if (!form.start_at) {
+      throw new Error(
+        'Start date and time are required.',
+      );
+    }
+
+    if (!form.end_at) {
+      throw new Error(
+        'End date and time are required.',
+      );
+    }
+
+    const startDate =
+      new Date(form.start_at);
+
+    const endDate =
+      new Date(form.end_at);
+
+    if (
+      Number.isNaN(
+        startDate.getTime(),
+      )
+    ) {
+      throw new Error(
+        'Invalid start date.',
+      );
+    }
+
+    if (
+      Number.isNaN(
+        endDate.getTime(),
+      )
+    ) {
+      throw new Error(
+        'Invalid end date.',
+      );
+    }
+
+    if (endDate <= startDate) {
+      throw new Error(
+        'End time must be after start time.',
+      );
+    }
+
+    let registrationDeadline:
+      Date | null = null;
+
+    if (form.registration_deadline) {
+      registrationDeadline =
+        new Date(
+          form.registration_deadline,
+        );
+
+      if (
+        Number.isNaN(
+          registrationDeadline.getTime(),
+        )
+      ) {
+        throw new Error(
+          'Invalid registration deadline.',
+        );
+      }
+
+      if (
+        registrationDeadline >=
+        startDate
+      ) {
+        throw new Error(
+          'Registration deadline must be before the event starts.',
+        );
+      }
+    }
+
+    const price =
+      Number(form.price);
+
+    if (
+      !Number.isFinite(price) ||
+      price < 0
+    ) {
+      throw new Error(
+        'Ticket price must be 0 or greater.',
+      );
+    }
+
+    const capacity =
+      Number(form.capacity);
+
+    if (
+      !Number.isFinite(capacity) ||
+      capacity <= 0
+    ) {
+      throw new Error(
+        'Capacity must be greater than 0.',
+      );
+    }
+
+    const maxTicketsPerUser =
+      Number(
+        form.max_tickets_per_user,
+      );
+
+    if (
+      !Number.isFinite(
+        maxTicketsPerUser,
+      ) ||
+      maxTicketsPerUser <= 0
+    ) {
+      throw new Error(
+        'Maximum tickets per user must be greater than 0.',
+      );
+    }
+
+    const visibility =
+      form.visibility === 'private'
+        ? 'private'
+        : 'public';
+
+    const mediaURL =
+      form.cover_media_url ||
+      form.cover_image ||
+      '';
+
+    const payload: any = {
+      title: form.title.trim(),
+
+      slug:
+        form.slug?.trim() ||
+        slugify(form.title.trim()),
+
+      description:
+        form.description?.trim() || '',
+
+      venue:
+        form.venue?.trim() || '',
+
+      address:
+        form.address?.trim() || '',
+
+      city:
+        form.city?.trim() || '',
+
+      country:
+        form.country?.trim() || 'India',
+
+      category:
+        form.category?.trim() || 'Music',
+
+      /*
+       * Keep cover_image for the current backend/database.
+       */
+      cover_image: mediaURL,
+
+      /*
+       * These are harmless when the backend starts
+       * persisting media metadata.
+       */
+      cover_media_url: mediaURL,
+      cover_media_type: 'image',
+
+      tags:
+        Array.isArray(form.tags)
+          ? form.tags
+          : [],
+
+      featured:
+        !!form.featured,
+
+      visibility,
+
+      capacity,
+
+      max_tickets_per_user:
+        maxTicketsPerUser,
+
+      allow_waitlist:
+        !!form.allow_waitlist,
+
+      registration_deadline:
+        registrationDeadline
+          ? registrationDeadline.toISOString()
+          : null,
+
+      start_time:
+        startDate.toISOString(),
+
+      end_time:
+        endDate.toISOString(),
+
+      price,
+    };
+
+    if (role === 'admin') {
+      payload.organization_id =
+        Number(organization.id);
+    }
+
+    return payload;
+  };
+
+  /*
+   * ========================================================
+   * SAVE EVENT
+   * ========================================================
+   */
+
   const save = useMutation({
     mutationFn: async () => {
-      if (
-        role === 'admin' &&
-        !organization?.id
-      ) {
-        throw new Error(
-          'No organization found for this account.',
-        );
-      }
-
-      if (!form.title?.trim()) {
-        throw new Error(
-          'Event title is required.',
-        );
-      }
-
-      if (!form.start_at) {
-        throw new Error(
-          'Start date and time are required.',
-        );
-      }
-
-      if (!form.end_at) {
-        throw new Error(
-          'End date and time are required.',
-        );
-      }
-
-      const startDate =
-        new Date(form.start_at);
-
-      const endDate =
-        new Date(form.end_at);
-
-      if (
-        Number.isNaN(
-          startDate.getTime(),
-        )
-      ) {
-        throw new Error(
-          'Invalid start date.',
-        );
-      }
-
-      if (
-        Number.isNaN(
-          endDate.getTime(),
-        )
-      ) {
-        throw new Error(
-          'Invalid end date.',
-        );
-      }
-
-      if (endDate <= startDate) {
-        throw new Error(
-          'End time must be after start time.',
-        );
-      }
-
-      const price = Number(form.price);
-
-      if (!Number.isFinite(price) || price < 0) {
-        throw new Error(
-          'Ticket price must be 0 or greater.',
-        );
-      }
-
-      const capacity = Number(form.capacity);
-
-      if (
-        !Number.isFinite(capacity) ||
-        capacity <= 0
-      ) {
-        throw new Error(
-          'Capacity must be greater than 0.',
-        );
-      }
-
-      const payload: any = {
-        title: form.title.trim(),
-
-        description:
-          form.description?.trim() || '',
-
-        venue:
-          form.venue?.trim() || '',
-
-        capacity,
-
-        start_time:
-          startDate.toISOString(),
-
-        end_time:
-          endDate.toISOString(),
-
-        // INR is the only supported currency.
-        price,
-      };
-
-      if (role === 'admin') {
-        payload.organization_id =
-          Number(organization.id);
-      }
-
-      if (form.slug) {
-        payload.slug = form.slug;
-      }
-
-      if (form.category) {
-        payload.category =
-          form.category;
-      }
-
-      if (form.cover_image) {
-        payload.cover_image =
-          form.cover_image;
-      }
-
-      if (form.address) {
-        payload.address =
-          form.address;
-      }
-
-      if (form.city) {
-        payload.city =
-          form.city;
-      }
-
-      if (form.country) {
-        payload.country =
-          form.country;
-      }
-
-      if (Array.isArray(form.tags)) {
-        payload.tags =
-          form.tags;
-      }
-
-      payload.featured =
-        !!form.featured;
+      const payload =
+        buildPayload();
 
       if (isEdit) {
-        return EventsAPI.update(
-          Number(id),
+        const updated =
+          await EventsAPI.update(
+            Number(id),
+            payload,
+          );
+
+        /*
+         * Upload newly selected media after
+         * successfully updating the event.
+         */
+        if (selectedMedia) {
+          await uploadMedia(
+            Number(id),
+          );
+        }
+
+        return updated;
+      }
+
+      /*
+       * New event must be created first because
+       * upload endpoint needs event ID.
+       */
+      const created =
+        await EventsAPI.create(
           payload,
+        );
+
+      const createdEventID =
+        Number(
+          (created as any)?.id ??
+          (created as any)?.event_id,
+        );
+
+      if (
+        selectedMedia &&
+        Number.isFinite(createdEventID) &&
+        createdEventID > 0
+      ) {
+        await uploadMedia(
+          createdEventID,
         );
       }
 
-      return EventsAPI.create(
+      return created;
+    },
+
+    onError: (error: any) => {
+      toast.error(
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to save event',
+      );
+    },
+  });
+
+  /*
+   * ========================================================
+   * PUBLISH
+   * ========================================================
+   */
+
+  const publish = useMutation({
+    mutationFn: async () => {
+      if (!isEdit) {
+        const payload =
+          buildPayload();
+
+        const created =
+          await EventsAPI.create(
+            payload,
+          );
+
+        const createdEventID =
+          Number(
+            (created as any)?.id ??
+            (created as any)?.event_id,
+          );
+
+        if (
+          !Number.isFinite(createdEventID) ||
+          createdEventID <= 0
+        ) {
+          throw new Error(
+            'Event was created but no valid event ID was returned.',
+          );
+        }
+
+        if (selectedMedia) {
+          await uploadMedia(
+            createdEventID,
+          );
+        }
+
+        return EventsAPI.publish(
+          createdEventID,
+        );
+      }
+
+      const payload =
+        buildPayload();
+
+      await EventsAPI.update(
+        Number(id),
         payload,
+      );
+
+      if (selectedMedia) {
+        await uploadMedia(
+          Number(id),
+        );
+      }
+
+      return EventsAPI.publish(
+        Number(id),
       );
     },
 
     onSuccess: () => {
+      if (!isEdit) {
+        toast.success(
+          'Event created as draft. Open it from Events and publish it.',
+        );
+
+        if (role === 'admin') {
+          nav('/admin/events', {
+            replace: true,
+          });
+        } else {
+          nav('/dashboard/events', {
+            replace: true,
+          });
+        }
+
+        return;
+      }
+
       toast.success(
-        isEdit
-          ? 'Event updated'
-          : 'Event created',
+        'Event published successfully',
       );
 
       if (role === 'admin') {
@@ -334,7 +774,7 @@ export function EventEditor() {
         error?.response?.data?.message ||
         error?.response?.data?.error ||
         error?.message ||
-        'Failed to save event',
+        'Failed to publish event',
       );
     },
   });
@@ -390,6 +830,21 @@ export function EventEditor() {
     );
   }
 
+  const isSaving =
+    save.isPending ||
+    publish.isPending ||
+    mediaUploading;
+
+  const rawCurrentMediaURL =
+    mediaPreview ||
+    form.cover_media_url ||
+    form.cover_image ||
+    '';
+
+  const currentMediaURL =
+    mediaPreview ||
+    resolveMediaUrl(rawCurrentMediaURL);
+
   return (
     <div className="space-y-6">
       <button
@@ -418,14 +873,27 @@ export function EventEditor() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            disabled={save.isPending}
+            disabled={isSaving}
             onClick={() => {
-              set(
-                'status',
-                'draft',
-              );
+              save.mutate(undefined, {
+                onSuccess: () => {
+                  toast.success(
+                    isEdit
+                      ? 'Event updated'
+                      : 'Event created',
+                  );
 
-              save.mutate();
+                  if (role === 'admin') {
+                    nav('/admin/events', {
+                      replace: true,
+                    });
+                  } else {
+                    nav('/dashboard/events', {
+                      replace: true,
+                    });
+                  }
+                },
+              });
             }}
           >
             Save as draft
@@ -433,15 +901,11 @@ export function EventEditor() {
 
           <Button
             variant="secondary"
+            disabled={isSaving}
             onClick={() => {
-              set(
-                'status',
-                'published',
-              );
-
-              save.mutate();
+              publish.mutate();
             }}
-            loading={save.isPending}
+            loading={isSaving}
             leftIcon={
               <Sparkles className="h-4 w-4" />
             }
@@ -549,20 +1013,101 @@ export function EventEditor() {
                 )}
               </Select>
 
-              <Input
-                label="Cover image URL (optional)"
-                value={
-                  form.cover_image ||
-                  ''
-                }
-                onChange={(e) =>
-                  set(
-                    'cover_image',
-                    e.target.value,
-                  )
-                }
-                placeholder="https://…"
-              />
+              {/* =================================================
+                  MEDIA UPLOAD
+              ================================================== */}
+
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                  Event cover
+                </label>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={
+                    handleMediaSelect
+                  }
+                  className="hidden"
+                />
+
+                <div className="rounded-xl border border-dashed border-ink-300 bg-ink-50 p-4">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      fileInputRef.current?.click()
+                    }
+                    disabled={isSaving}
+                    className="flex w-full flex-col items-center justify-center rounded-lg border border-ink-200 bg-white px-4 py-6 text-center transition hover:border-brand-400 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Upload className="h-6 w-6 text-brand-600" />
+
+                    <span className="mt-2 text-sm font-semibold text-ink-900">
+                      Choose event cover image
+                    </span>
+
+                    <span className="mt-1 text-xs text-ink-500">
+                      JPG, JPEG, PNG, WEBP, GIF
+                    </span>
+
+                    <span className="mt-1 text-xs text-ink-400">
+                      Maximum 100 MB
+                    </span>
+                  </button>
+
+                  {selectedMedia && (
+                    <div className="mt-3 flex items-center justify-between rounded-lg bg-white p-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <ImageIcon className="h-4 w-4 shrink-0 text-brand-600" />
+
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium text-ink-900">
+                            {selectedMedia.name}
+                          </p>
+
+                          <p className="text-xs text-ink-500">
+                            {(
+                              selectedMedia.size /
+                              (1024 * 1024)
+                            ).toFixed(2)}{' '}
+                            MB
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={
+                          removeSelectedMedia
+                        }
+                        disabled={isSaving}
+                        className="rounded-lg p-1.5 text-ink-500 hover:bg-red-50 hover:text-red-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {!selectedMedia &&
+                    form.cover_image && (
+                      <div className="mt-3 flex items-center justify-between rounded-lg bg-white p-3">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon className="h-4 w-4 text-brand-600" />
+
+                          <span className="text-xs text-ink-600">
+                            Existing cover media
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                </div>
+
+                <p className="mt-1 text-xs text-ink-500">
+                  Upload directly from your laptop. The
+                  backend stores it locally during development.
+                </p>
+              </div>
             </div>
           </div>
 
@@ -581,6 +1126,7 @@ export function EventEditor() {
                     e.target.value,
                   )
                 }
+                placeholder="e.g. DTU Auditorium"
               />
 
               <Input
@@ -592,6 +1138,7 @@ export function EventEditor() {
                     e.target.value,
                   )
                 }
+                placeholder="Street / area / building"
               />
 
               <Input
@@ -603,6 +1150,7 @@ export function EventEditor() {
                     e.target.value,
                   )
                 }
+                placeholder="e.g. Delhi"
               />
 
               <Input
@@ -614,6 +1162,7 @@ export function EventEditor() {
                     e.target.value,
                   )
                 }
+                placeholder="India"
               />
 
               <Input
@@ -639,6 +1188,21 @@ export function EventEditor() {
                   )
                 }
               />
+
+              <Input
+                label="Registration deadline"
+                type="datetime-local"
+                value={
+                  form.registration_deadline
+                }
+                onChange={(e) =>
+                  set(
+                    'registration_deadline',
+                    e.target.value,
+                  )
+                }
+                hint="Must be before the event starts"
+              />
             </div>
           </div>
 
@@ -662,7 +1226,11 @@ export function EventEditor() {
                     type="number"
                     min="0"
                     step="0.01"
-                    value={form.price === 0 ? '' : form.price}
+                    value={
+                      form.price === 0
+                        ? ''
+                        : form.price
+                    }
                     onChange={(e) =>
                       set(
                         'price',
@@ -699,6 +1267,81 @@ export function EventEditor() {
                   )
                 }
               />
+
+              <Input
+                label="Max tickets per user"
+                type="number"
+                min="1"
+                value={
+                  form.max_tickets_per_user
+                }
+                onChange={(e) =>
+                  set(
+                    'max_tickets_per_user',
+                    e.target.value === ''
+                      ? 0
+                      : Number(
+                        e.target.value,
+                      ),
+                  )
+                }
+                hint="Maximum tickets one attendee can register for"
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border border-ink-200 p-4">
+              <div>
+                <p className="font-semibold">
+                  Allow waitlist
+                </p>
+
+                <p className="text-xs text-ink-500">
+                  Let users join when the event is full.
+                </p>
+              </div>
+
+              <input
+                type="checkbox"
+                checked={
+                  !!form.allow_waitlist
+                }
+                onChange={(e) =>
+                  set(
+                    'allow_waitlist',
+                    e.target.checked,
+                  )
+                }
+                className="h-4 w-4 accent-brand-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium text-ink-700">
+                Visibility
+              </label>
+
+              <select
+                value={form.visibility}
+                onChange={(e) =>
+                  set(
+                    'visibility',
+                    e.target.value,
+                  )
+                }
+                className="h-10 w-full rounded-lg border border-ink-200 bg-white px-3 text-sm text-ink-900 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500"
+              >
+                <option value="public">
+                  Public
+                </option>
+
+                <option value="private">
+                  Private
+                </option>
+              </select>
+
+              <p className="mt-1 text-xs text-ink-500">
+                Public events can be discovered by attendees.
+              </p>
             </div>
           </div>
 
@@ -716,10 +1359,7 @@ export function EventEditor() {
                   )
                 }
                 onKeyDown={(e) => {
-                  if (
-                    e.key ===
-                    'Enter'
-                  ) {
+                  if (e.key === 'Enter') {
                     e.preventDefault();
                     addTag();
                   }
@@ -763,13 +1403,33 @@ export function EventEditor() {
 
         <aside className="h-fit space-y-4 lg:sticky lg:top-20">
           <div className="overflow-hidden rounded-2xl border border-ink-200 bg-white">
-            <div className="aspect-video bg-gradient-to-br from-brand-500 to-sky-500">
-              {form.cover_image && (
+            <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-brand-500 to-sky-500">
+              {currentMediaURL ? (
                 <img
-                  src={form.cover_image}
-                  alt=""
+                  src={currentMediaURL}
+                  alt={
+                    form.title ||
+                    'Event cover'
+                  }
                   className="h-full w-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display =
+                      'none';
+                  }}
                 />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center text-white/80">
+                  <ImageIcon className="h-8 w-8" />
+                  <p className="mt-2 text-xs">
+                    Event cover preview
+                  </p>
+                </div>
+              )}
+
+              {mediaUploading && (
+                <div className="absolute inset-0 flex items-center justify-center bg-ink-950/60 text-sm font-semibold text-white">
+                  Uploading media…
+                </div>
               )}
             </div>
 
@@ -793,7 +1453,11 @@ export function EventEditor() {
 
               <p className="mt-2 text-sm font-semibold text-ink-800">
                 {Number(form.price) > 0
-                  ? `₹${Number(form.price).toLocaleString('en-IN')}`
+                  ? `₹${Number(
+                    form.price,
+                  ).toLocaleString(
+                    'en-IN',
+                  )}`
                   : 'Free'}
               </p>
             </div>
@@ -815,6 +1479,14 @@ export function EventEditor() {
 
               <li>
                 • Set a realistic capacity
+              </li>
+
+              <li>
+                • Set a registration deadline
+              </li>
+
+              <li>
+                • Configure ticket limit and waitlist
               </li>
 
               <li>

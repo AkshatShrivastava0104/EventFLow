@@ -19,6 +19,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { fmtDate } from '../../lib/utils';
+import { resolveMediaUrl } from '../../lib/api';
 
 export function AdminOverview() {
     const {
@@ -396,7 +397,24 @@ export function AdminOverview() {
                                 key={event.id}
                                 className="flex flex-wrap items-center gap-4 py-3"
                             >
-                                <div className="h-11 w-11 shrink-0 rounded-lg bg-gradient-to-br from-brand-500 to-sky-500" />
+                                {(() => {
+                                    const coverImage =
+                                        event.cover_image ||
+                                        '';
+
+                                    return coverImage ? (
+                                        <img
+                                            src={resolveMediaUrl(coverImage)}
+                                            alt={event.title || 'Event cover'}
+                                            className="h-11 w-11 shrink-0 rounded-lg object-cover"
+                                            onError={(e) => {
+                                                e.currentTarget.style.display = 'none';
+                                            }}
+                                        />
+                                    ) : (
+                                        <div className="h-11 w-11 shrink-0 rounded-lg bg-gradient-to-br from-brand-500 to-sky-500" />
+                                    );
+                                })()}
 
                                 <div className="min-w-0 flex-1">
                                     <p className="truncate text-sm font-semibold">

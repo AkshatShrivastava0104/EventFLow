@@ -6,7 +6,7 @@ import {
   Link,
 } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   motion,
   AnimatePresence,
@@ -51,6 +51,7 @@ const accentMap = {
 
 const roleLabelMap: Record<string, string> = {
   owner: 'Platform Owner',
+  platform_owner: 'Platform Owner',
   admin: 'Organization Admin',
   staff: 'Staff',
   user: 'User',
@@ -64,6 +65,9 @@ export function DashboardLayout({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
+
+  const userMenuCloseTimer =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const {
     user,
@@ -114,15 +118,67 @@ export function DashboardLayout({
     return active?.label || brandLabel;
   })();
 
+  const normalizedRole = role?.toLowerCase();
+
   const roleLabel =
-    roleLabelMap[role || 'user'] || 'User';
+    roleLabelMap[normalizedRole || 'user'] || 'User';
 
   const avatarLetter =
     displayName?.slice(0, 1)?.toUpperCase() ||
     'U';
 
+  /* =========================================================
+     Role dashboard
+  ========================================================= */
+
+  const dashboardPath =
+    normalizedRole === 'owner' ||
+      normalizedRole === 'platform_owner'
+      ? '/dashboard'
+      : normalizedRole === 'admin'
+        ? '/admin'
+        : normalizedRole === 'staff'
+          ? '/staff'
+          : '/';
+
+  /* =========================================================
+     User menu close handling
+  ========================================================= */
+
+  const cancelUserMenuClose = () => {
+    if (userMenuCloseTimer.current) {
+      clearTimeout(userMenuCloseTimer.current);
+      userMenuCloseTimer.current = null;
+    }
+  };
+
+  const closeUserMenu = () => {
+    cancelUserMenuClose();
+
+    userMenuCloseTimer.current = setTimeout(() => {
+      setUserMenu(false);
+      userMenuCloseTimer.current = null;
+    }, 500);
+  };
+
+  const toggleUserMenu = () => {
+    cancelUserMenuClose();
+
+    setUserMenu((value) => !value);
+  };
+
+  const closeUserMenuImmediately = () => {
+    cancelUserMenuClose();
+    setUserMenu(false);
+  };
+
+  /* =========================================================
+     Render
+  ========================================================= */
+
   return (
     <div className="flex min-h-screen bg-ink-50">
+
       {/* =====================================================
           Sidebar Overlay - Mobile
       ===================================================== */}
@@ -145,16 +201,17 @@ export function DashboardLayout({
 
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-ink-950 text-ink-100 transition-transform lg:relative lg:translate-x-0 ${open
-            ? 'translate-x-0'
-            : '-translate-x-full lg:translate-x-0'
+          ? 'translate-x-0'
+          : '-translate-x-full lg:translate-x-0'
           }`}
       >
         {/* Brand */}
 
         <div className="flex h-16 items-center justify-between border-b border-white/5 px-5">
           <Link
-            to="/"
+            to={dashboardPath}
             className="flex items-center gap-2"
+            onClick={() => setOpen(false)}
           >
             <div
               className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${accentMap[accent]}`}
@@ -234,7 +291,7 @@ export function DashboardLayout({
               {avatarLetter}
             </div>
 
-            <div className="flex-1 min-w-0 leading-tight">
+            <div className="min-w-0 flex-1 leading-tight">
               <p className="truncate text-sm font-semibold text-white">
                 {displayName}
               </p>
@@ -246,8 +303,13 @@ export function DashboardLayout({
 
             <button
               onClick={async () => {
+                closeUserMenuImmediately();
+
                 await signOut();
-                nav('/');
+
+                nav('/login', {
+                  replace: true,
+                });
               }}
               className="rounded-lg p-2 text-ink-400 hover:bg-white/10"
               title="Sign out"
@@ -263,9 +325,11 @@ export function DashboardLayout({
       ===================================================== */}
 
       <div className="flex min-w-0 flex-1 flex-col">
+
         {/* Header */}
 
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-ink-200 bg-white px-4 sm:px-6">
+
           {/* Mobile menu */}
 
           <button
@@ -290,6 +354,7 @@ export function DashboardLayout({
           {/* Header actions */}
 
           <div className="ml-auto flex items-center gap-2">
+
             {/* Search */}
 
             <div className="relative hidden md:block">
@@ -318,12 +383,16 @@ export function DashboardLayout({
 
             {/* User menu */}
 
-            <div className="relative">
+            <div
+              className="relative"
+              onMouseEnter={cancelUserMenuClose}
+              onMouseLeave={closeUserMenu}
+            >
               <button
-                onClick={() =>
-                  setUserMenu((value) => !value)
-                }
-                className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3"
+                onClick={toggleUserMenu}
+                className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3 hover:border-ink-300"
+                aria-expanded={userMenu}
+                aria-haspopup="menu"
               >
                 <div
                   className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${accentMap[accent]} text-xs font-bold text-white`}
@@ -335,7 +404,10 @@ export function DashboardLayout({
                   {displayName}
                 </span>
 
-                <ChevronDown className="h-4 w-4 text-ink-500" />
+                <ChevronDown
+                  className={`h-4 w-4 text-ink-500 transition-transform ${userMenu ? 'rotate-180' : ''
+                    }`}
+                />
               </button>
 
               <AnimatePresence>
@@ -353,34 +425,36 @@ export function DashboardLayout({
                       opacity: 0,
                       y: 6,
                     }}
+                    transition={{
+                      duration: 0.15,
+                    }}
                     className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl"
+                    role="menu"
                   >
-                    <Link
-                      to="/"
-                      className="block px-4 py-2 text-sm text-ink-700 hover:bg-ink-50"
-                      onClick={() =>
-                        setUserMenu(false)
-                      }
-                    >
-                      Back to site
-                    </Link>
+                    {/* Profile */}
 
                     <Link
                       to="/profile"
-                      className="block px-4 py-2 text-sm text-ink-700 hover:bg-ink-50"
-                      onClick={() =>
-                        setUserMenu(false)
-                      }
+                      className="block px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50"
+                      onClick={closeUserMenuImmediately}
                     >
                       Profile
                     </Link>
 
+                    {/* Sign out */}
+
                     <button
                       onClick={async () => {
+                        closeUserMenuImmediately();
+
                         await signOut();
-                        nav('/');
+
+                        nav('/login', {
+                          replace: true,
+                        });
                       }}
-                      className="flex w-full items-center gap-2 border-t border-ink-100 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                      className="flex w-full items-center gap-2 border-t border-ink-100 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                      role="menuitem"
                     >
                       <LogOut className="h-4 w-4" />
                       Sign out

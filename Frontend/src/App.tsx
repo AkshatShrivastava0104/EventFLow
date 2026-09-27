@@ -30,7 +30,8 @@ import { Profile } from './pages/user/Profile';
 
 // Platform Owner
 import { OwnerOverview } from './pages/owner/Overview';
-import { Analytics } from './pages/owner/Analytics';
+import { Analytics as OwnerAnalytics } from './pages/owner/Analytics';
+import { Analytics as AdminAnalytics } from './pages/admin/Analytics';
 import { EventsTable } from './pages/owner/EventsTable';
 import { EventEditor } from './pages/owner/EventEditor';
 import { Registrations } from './pages/owner/Registrations';
@@ -232,7 +233,7 @@ export default function App() {
 
         <Route
           path="analytics"
-          element={<Analytics />}
+          element={<OwnerAnalytics />}
         />
 
         <Route
@@ -331,7 +332,7 @@ export default function App() {
         {/* /admin/analytics */}
         <Route
           path="analytics"
-          element={<Analytics />}
+          element={<AdminAnalytics />}
         />
 
         {/* /admin/registrations */}

@@ -3,12 +3,72 @@ import axios, {
   InternalAxiosRequestConfig,
 } from 'axios';
 
-
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_BASE ||
   'http://localhost:8080/api/v1';
 
+/*
+|--------------------------------------------------------------------------
+| API URL HELPERS
+|--------------------------------------------------------------------------
+*/
+
+export function getApiOrigin(): string {
+  try {
+    return new URL(API_BASE_URL).origin;
+  } catch {
+    return window.location.origin;
+  }
+}
+
+export function resolveMediaUrl(
+  mediaUrl?: string | null
+): string {
+  if (!mediaUrl) {
+    return '';
+  }
+
+  const trimmedUrl = mediaUrl.trim();
+
+  if (!trimmedUrl) {
+    return '';
+  }
+
+  // Already an absolute URL.
+  if (
+    trimmedUrl.startsWith('http://') ||
+    trimmedUrl.startsWith('https://') ||
+    trimmedUrl.startsWith('blob:') ||
+    trimmedUrl.startsWith('data:')
+  ) {
+    return trimmedUrl;
+  }
+
+  /*
+   * Backend currently returns:
+   *
+   * /uploads/events/<filename>
+   *
+   * Frontend runs on localhost:5173 while backend
+   * runs on localhost:8080.
+   *
+   * Therefore relative upload paths must be resolved
+   * against the backend origin.
+   */
+  if (trimmedUrl.startsWith('/')) {
+    return `${getApiOrigin()}${trimmedUrl}`;
+  }
+
+  return `${getApiOrigin()}/${trimmedUrl}`;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| AXIOS INSTANCE
+|--------------------------------------------------------------------------
+*/
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -72,16 +132,12 @@ function clearTokens() {
 |--------------------------------------------------------------------------
 | REQUEST INTERCEPTOR
 |--------------------------------------------------------------------------
-|
-| Automatically attach access token to every API request.
-|
 */
 
 api.interceptors.request.use(
   (
     config: InternalAxiosRequestConfig
   ) => {
-
     const token = getAccessToken();
 
     if (token) {
@@ -109,31 +165,15 @@ let refreshPromise:
 
 
 async function refreshAccessToken(): Promise<string | null> {
-
   const refreshToken =
     getRefreshToken();
 
-
   if (!refreshToken) {
-
     clearTokens();
-
     return null;
   }
 
-
   try {
-
-    /*
-     * IMPORTANT:
-     *
-     * Use a separate axios request here
-     * instead of `api.post()`.
-     *
-     * This prevents the response interceptor
-     * from intercepting the refresh request itself.
-     */
-
     const response = await axios.post<{
       access_token: string;
       refresh_token?: string;
@@ -152,31 +192,23 @@ async function refreshAccessToken(): Promise<string | null> {
       }
     );
 
-
     const newAccessToken =
       response.data.access_token;
 
-
     if (!newAccessToken) {
-
       clearTokens();
-
       return null;
     }
-
 
     setTokens(
       newAccessToken,
       response.data.refresh_token
     );
 
-
     return newAccessToken;
 
   } catch {
-
     clearTokens();
-
     return null;
   }
 }
@@ -186,26 +218,16 @@ async function refreshAccessToken(): Promise<string | null> {
 |--------------------------------------------------------------------------
 | RESPONSE INTERCEPTOR
 |--------------------------------------------------------------------------
-|
-| If an API request returns 401:
-|
-| 1. Try refresh token
-| 2. Save new access token
-| 3. Retry original request
-|
 */
 
 api.interceptors.response.use(
-
   (response) => {
     return response;
   },
 
-
   async (
     error: AxiosError
   ) => {
-
     const originalRequest =
       error.config as
       | (
@@ -216,21 +238,8 @@ api.interceptors.response.use(
       )
       | undefined;
 
-
-    /*
-     * Don't refresh for:
-     *
-     * /auth/login
-     * /auth/register
-     * /auth/refresh
-     *
-     * A 401 from these endpoints is a
-     * genuine authentication failure.
-     */
-
     const requestUrl =
       originalRequest?.url || '';
-
 
     const isAuthEndpoint =
       requestUrl.includes(
@@ -243,29 +252,18 @@ api.interceptors.response.use(
         '/auth/refresh'
       );
 
-
     if (
       error.response?.status !== 401 ||
       !originalRequest ||
       originalRequest._retry ||
       isAuthEndpoint
     ) {
-
       return Promise.reject(error);
     }
 
-
     originalRequest._retry = true;
 
-
-    /*
-     * If multiple requests receive 401
-     * simultaneously, only ONE refresh
-     * request is sent.
-     */
-
     if (!refreshPromise) {
-
       refreshPromise =
         refreshAccessToken();
 
@@ -274,29 +272,16 @@ api.interceptors.response.use(
       });
     }
 
-
     const newAccessToken =
       await refreshPromise;
 
-
-    /*
-     * Refresh failed.
-     */
-
     if (!newAccessToken) {
-
       clearTokens();
-
-      /*
-       * Don't redirect if we're already
-       * on the login page.
-       */
 
       if (
         window.location.pathname !==
         '/login'
       ) {
-
         window.location.href =
           '/login';
       }
@@ -304,15 +289,8 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
-
-    /*
-     * Retry original request with
-     * fresh access token.
-     */
-
     originalRequest.headers.Authorization =
       `Bearer ${newAccessToken}`;
-
 
     return api(originalRequest);
   }

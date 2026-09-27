@@ -23,6 +23,7 @@ import {
   HeartHandshake,
 } from 'lucide-react';
 import { EventsAPI } from '../../lib/queries';
+import { resolveMediaUrl } from '../../lib/api';
 import { EventCard } from '../../components/shared/EventCard';
 import { SkeletonCard } from '../../components/ui/Skeleton';
 import { motion } from 'framer-motion';
@@ -294,9 +295,26 @@ export function Landing() {
               No featured events yet.
             </p>
           ) : (
-            featuredEvents.map((e) => (
-              <EventCard key={e.id} event={e} />
-            ))
+            featuredEvents.map((e) => {
+              const coverImage =
+                e?.cover_image ||
+                e?.cover_media_url ||
+                '';
+
+              const eventWithCover = {
+                ...e,
+                cover_image: coverImage
+                  ? resolveMediaUrl(coverImage)
+                  : '',
+              };
+
+              return (
+                <EventCard
+                  key={e.id}
+                  event={eventWithCover}
+                />
+              );
+            })
           )}
         </div>
       </section>
@@ -323,13 +341,27 @@ export function Landing() {
           ) : (
             upcomingEvents
               .slice(0, 8)
-              .map((e) => (
-                <EventCard
-                  key={e.id}
-                  event={e}
-                  compact
-                />
-              ))
+              .map((e) => {
+                const coverImage =
+                  e?.cover_image ||
+                  e?.cover_media_url ||
+                  '';
+
+                const eventWithCover = {
+                  ...e,
+                  cover_image: coverImage
+                    ? resolveMediaUrl(coverImage)
+                    : '',
+                };
+
+                return (
+                  <EventCard
+                    key={e.id}
+                    event={eventWithCover}
+                    compact
+                  />
+                );
+              })
           )}
         </div>
       </section>
