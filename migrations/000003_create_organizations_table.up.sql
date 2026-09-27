@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS organizations (
+  id BIGSERIAL PRIMARY KEY,
+  owner_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  website TEXT,
+  logo TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS tickets (
+  id BIGSERIAL PRIMARY KEY,
+  registration_id BIGINT NOT NULL REFERENCES registrations(id) ON DELETE CASCADE,
+  qr_code TEXT NOT NULL UNIQUE,
+  ticket_number TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

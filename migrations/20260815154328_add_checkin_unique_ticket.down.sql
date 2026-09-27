@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_checkins_ticket_id;
