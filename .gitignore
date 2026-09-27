@@ -22,3 +22,6 @@ Frontend/build/
 # OS
 .DS_Store
 Thumbs.db
+
+Backend/uploads/*
+!Backend/uploads/.gitkeep
