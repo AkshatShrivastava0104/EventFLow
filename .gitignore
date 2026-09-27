@@ -1,0 +1,24 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Go
+tmp/
+bin/
+
+# Go build artifacts
+*.exe
+
+# Frontend
+Frontend/node_modules/
+Frontend/dist/
+Frontend/build/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
