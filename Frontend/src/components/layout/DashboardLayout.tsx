@@ -6,11 +6,13 @@ import {
   Link,
 } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+
 import {
   motion,
   AnimatePresence,
 } from 'framer-motion';
+
 import {
   Menu,
   X,
@@ -20,8 +22,11 @@ import {
   Ticket as TicketIcon,
   ChevronDown,
 } from 'lucide-react';
+
 import { useAuth } from '../../contexts/AuthContext';
+
 import { useQuery } from '@tanstack/react-query';
+
 import { NotificationsAPI } from '../../lib/queries';
 
 export interface NavGroup {
@@ -51,7 +56,6 @@ const accentMap = {
 
 const roleLabelMap: Record<string, string> = {
   owner: 'Platform Owner',
-  platform_owner: 'Platform Owner',
   admin: 'Organization Admin',
   staff: 'Staff',
   user: 'User',
@@ -66,9 +70,6 @@ export function DashboardLayout({
   const [open, setOpen] = useState(false);
   const [userMenu, setUserMenu] = useState(false);
 
-  const userMenuCloseTimer =
-    useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const {
     user,
     displayName,
@@ -79,9 +80,14 @@ export function DashboardLayout({
   const nav = useNavigate();
   const loc = useLocation();
 
-  /* =========================================================
-     Notifications
-  ========================================================= */
+  /*
+   * IMPORTANT:
+   * Hover dropdown is enabled ONLY for Organization Admin.
+   * Owner Console keeps its existing click behaviour.
+   */
+  const isOrganizationConsole =
+    brandLabel.toLowerCase() ===
+    'organization admin';
 
   const { data: notifs } = useQuery({
     queryKey: ['notifications', user?.id],
@@ -93,92 +99,36 @@ export function DashboardLayout({
   });
 
   const unread = (notifs || []).filter(
-    (notification) => !notification.read
+    (notification) => !notification.read,
   ).length;
-
-  /* =========================================================
-     Page title
-  ========================================================= */
 
   const pageTitle = (() => {
     const flat = groups.flatMap(
-      (group) => group.items
+      (group) => group.items,
     );
 
     const active =
       flat.find(
-        (item) => item.to === loc.pathname
+        (item) => item.to === loc.pathname,
       ) ||
       flat.find(
         (item) =>
           loc.pathname.startsWith(item.to) &&
-          item.to !== '/'
+          item.to !== '/',
       );
 
     return active?.label || brandLabel;
   })();
 
-  const normalizedRole = role?.toLowerCase();
-
   const roleLabel =
-    roleLabelMap[normalizedRole || 'user'] || 'User';
+    roleLabelMap[role || 'user'] || 'User';
 
   const avatarLetter =
     displayName?.slice(0, 1)?.toUpperCase() ||
     'U';
 
-  /* =========================================================
-     Role dashboard
-  ========================================================= */
-
-  const dashboardPath =
-    normalizedRole === 'owner' ||
-      normalizedRole === 'platform_owner'
-      ? '/dashboard'
-      : normalizedRole === 'admin'
-        ? '/admin'
-        : normalizedRole === 'staff'
-          ? '/staff'
-          : '/';
-
-  /* =========================================================
-     User menu close handling
-  ========================================================= */
-
-  const cancelUserMenuClose = () => {
-    if (userMenuCloseTimer.current) {
-      clearTimeout(userMenuCloseTimer.current);
-      userMenuCloseTimer.current = null;
-    }
-  };
-
-  const closeUserMenu = () => {
-    cancelUserMenuClose();
-
-    userMenuCloseTimer.current = setTimeout(() => {
-      setUserMenu(false);
-      userMenuCloseTimer.current = null;
-    }, 500);
-  };
-
-  const toggleUserMenu = () => {
-    cancelUserMenuClose();
-
-    setUserMenu((value) => !value);
-  };
-
-  const closeUserMenuImmediately = () => {
-    cancelUserMenuClose();
-    setUserMenu(false);
-  };
-
-  /* =========================================================
-     Render
-  ========================================================= */
-
   return (
     <div className="flex min-h-screen bg-ink-50">
-
       {/* =====================================================
           Sidebar Overlay - Mobile
       ===================================================== */}
@@ -201,17 +151,16 @@ export function DashboardLayout({
 
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-ink-950 text-ink-100 transition-transform lg:relative lg:translate-x-0 ${open
-          ? 'translate-x-0'
-          : '-translate-x-full lg:translate-x-0'
+            ? 'translate-x-0'
+            : '-translate-x-full lg:translate-x-0'
           }`}
       >
         {/* Brand */}
 
         <div className="flex h-16 items-center justify-between border-b border-white/5 px-5">
           <Link
-            to={dashboardPath}
+            to="/"
             className="flex items-center gap-2"
-            onClick={() => setOpen(false)}
           >
             <div
               className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${accentMap[accent]}`}
@@ -303,13 +252,8 @@ export function DashboardLayout({
 
             <button
               onClick={async () => {
-                closeUserMenuImmediately();
-
                 await signOut();
-
-                nav('/login', {
-                  replace: true,
-                });
+                nav('/');
               }}
               className="rounded-lg p-2 text-ink-400 hover:bg-white/10"
               title="Sign out"
@@ -325,11 +269,9 @@ export function DashboardLayout({
       ===================================================== */}
 
       <div className="flex min-w-0 flex-1 flex-col">
-
         {/* Header */}
 
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-ink-200 bg-white px-4 sm:px-6">
-
           {/* Mobile menu */}
 
           <button
@@ -354,7 +296,6 @@ export function DashboardLayout({
           {/* Header actions */}
 
           <div className="ml-auto flex items-center gap-2">
-
             {/* Search */}
 
             <div className="relative hidden md:block">
@@ -381,18 +322,32 @@ export function DashboardLayout({
               )}
             </Link>
 
-            {/* User menu */}
+            {/* =================================================
+                User menu
+            ================================================= */}
 
             <div
               className="relative"
-              onMouseEnter={cancelUserMenuClose}
-              onMouseLeave={closeUserMenu}
+              onMouseEnter={
+                isOrganizationConsole
+                  ? () => setUserMenu(true)
+                  : undefined
+              }
+              onMouseLeave={
+                isOrganizationConsole
+                  ? () => setUserMenu(false)
+                  : undefined
+              }
             >
               <button
-                onClick={toggleUserMenu}
-                className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3 hover:border-ink-300"
-                aria-expanded={userMenu}
-                aria-haspopup="menu"
+                onClick={() => {
+                  if (!isOrganizationConsole) {
+                    setUserMenu(
+                      (value) => !value,
+                    );
+                  }
+                }}
+                className="flex items-center gap-2 rounded-full border border-ink-200 py-1 pl-1 pr-3"
               >
                 <div
                   className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${accentMap[accent]} text-xs font-bold text-white`}
@@ -404,10 +359,7 @@ export function DashboardLayout({
                   {displayName}
                 </span>
 
-                <ChevronDown
-                  className={`h-4 w-4 text-ink-500 transition-transform ${userMenu ? 'rotate-180' : ''
-                    }`}
-                />
+                <ChevronDown className="h-4 w-4 text-ink-500" />
               </button>
 
               <AnimatePresence>
@@ -428,37 +380,35 @@ export function DashboardLayout({
                     transition={{
                       duration: 0.15,
                     }}
-                    className="absolute right-0 mt-2 w-52 overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl"
-                    role="menu"
+                    className="absolute right-0 top-full z-50 pt-2"
                   >
-                    {/* Profile */}
+                    <div className="w-52 overflow-hidden rounded-xl border border-ink-100 bg-white shadow-xl">
+                      {/* Profile */}
 
-                    <Link
-                      to="/profile"
-                      className="block px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50"
-                      onClick={closeUserMenuImmediately}
-                    >
-                      Profile
-                    </Link>
+                      <Link
+                        to="/profile"
+                        className="block px-4 py-2.5 text-sm text-ink-700 hover:bg-ink-50"
+                        onClick={() =>
+                          setUserMenu(false)
+                        }
+                      >
+                        Profile
+                      </Link>
 
-                    {/* Sign out */}
+                      {/* Sign out */}
 
-                    <button
-                      onClick={async () => {
-                        closeUserMenuImmediately();
-
-                        await signOut();
-
-                        nav('/login', {
-                          replace: true,
-                        });
-                      }}
-                      className="flex w-full items-center gap-2 border-t border-ink-100 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
-                      role="menuitem"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Sign out
-                    </button>
+                      <button
+                        onClick={async () => {
+                          await signOut();
+                          setUserMenu(false);
+                          nav('/');
+                        }}
+                        className="flex w-full items-center gap-2 border-t border-ink-100 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Sign out
+                      </button>
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>

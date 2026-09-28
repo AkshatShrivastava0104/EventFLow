@@ -3,6 +3,7 @@ package notification
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,10 +18,7 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) GetMyNotifications(
-	c *gin.Context,
-) {
-
+func getAuthenticatedUserID(c *gin.Context) (int64, bool) {
 	userIDValue, exists := c.Get("user_id")
 
 	if !exists {
@@ -30,7 +28,7 @@ func (h *Handler) GetMyNotifications(
 				"error": "user not authenticated",
 			},
 		)
-		return
+		return 0, false
 	}
 
 	userID, ok := userIDValue.(int64)
@@ -42,6 +40,18 @@ func (h *Handler) GetMyNotifications(
 				"error": "invalid user id",
 			},
 		)
+		return 0, false
+	}
+
+	return userID, true
+}
+
+func (h *Handler) GetMyNotifications(
+	c *gin.Context,
+) {
+	userID, ok := getAuthenticatedUserID(c)
+
+	if !ok {
 		return
 	}
 
@@ -51,7 +61,6 @@ func (h *Handler) GetMyNotifications(
 	var err error
 
 	if value := c.Query("page"); value != "" {
-
 		page, err = strconv.Atoi(value)
 
 		if err != nil || page < 1 {
@@ -66,13 +75,9 @@ func (h *Handler) GetMyNotifications(
 	}
 
 	if value := c.Query("limit"); value != "" {
-
 		limit, err = strconv.Atoi(value)
 
-		if err != nil ||
-			limit < 1 ||
-			limit > 100 {
-
+		if err != nil || limit < 1 || limit > 100 {
 			c.JSON(
 				http.StatusBadRequest,
 				gin.H{
@@ -110,28 +115,9 @@ func (h *Handler) GetMyNotifications(
 func (h *Handler) GetUnreadCount(
 	c *gin.Context,
 ) {
-
-	userIDValue, exists := c.Get("user_id")
-
-	if !exists {
-		c.JSON(
-			http.StatusUnauthorized,
-			gin.H{
-				"error": "user not authenticated",
-			},
-		)
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := getAuthenticatedUserID(c)
 
 	if !ok {
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{
-				"error": "invalid user id",
-			},
-		)
 		return
 	}
 
@@ -162,28 +148,9 @@ func (h *Handler) GetUnreadCount(
 func (h *Handler) MarkAllAsRead(
 	c *gin.Context,
 ) {
-
-	userIDValue, exists := c.Get("user_id")
-
-	if !exists {
-		c.JSON(
-			http.StatusUnauthorized,
-			gin.H{
-				"error": "user not authenticated",
-			},
-		)
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := getAuthenticatedUserID(c)
 
 	if !ok {
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{
-				"error": "invalid user id",
-			},
-		)
 		return
 	}
 
@@ -215,39 +182,20 @@ func (h *Handler) MarkAllAsRead(
 func (h *Handler) MarkAsRead(
 	c *gin.Context,
 ) {
-
-	userIDValue, exists := c.Get("user_id")
-
-	if !exists {
-		c.JSON(
-			http.StatusUnauthorized,
-			gin.H{
-				"error": "user not authenticated",
-			},
-		)
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := getAuthenticatedUserID(c)
 
 	if !ok {
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{
-				"error": "invalid user id",
-			},
-		)
 		return
 	}
 
 	notificationID, err :=
 		strconv.ParseInt(
-			c.Param("id"),
+			strings.TrimSpace(c.Param("id")),
 			10,
 			64,
 		)
 
-	if err != nil {
+	if err != nil || notificationID <= 0 {
 		c.JSON(
 			http.StatusBadRequest,
 			gin.H{
@@ -265,10 +213,20 @@ func (h *Handler) MarkAsRead(
 		)
 
 	if err != nil {
+		if err.Error() == "notification not found" {
+			c.JSON(
+				http.StatusNotFound,
+				gin.H{
+					"error": "notification not found",
+				},
+			)
+			return
+		}
+
 		c.JSON(
-			http.StatusNotFound,
+			http.StatusInternalServerError,
 			gin.H{
-				"error": err.Error(),
+				"error": "internal server error",
 			},
 		)
 		return

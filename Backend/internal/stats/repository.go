@@ -23,6 +23,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 
 func (r *Repository) GetPlatformStats(
 	ctx context.Context,
+	analyticsRange string,
 ) (*PlatformStats, error) {
 
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -31,31 +32,141 @@ func (r *Repository) GetPlatformStats(
 	stats := &PlatformStats{}
 
 	// ----------------------------------------------------------
+	// Selected analytics period
+	// ----------------------------------------------------------
+
+	periodStart := `
+		CASE $1
+			WHEN '7d'  THEN NOW() - INTERVAL '7 days'
+			WHEN '15d' THEN NOW() - INTERVAL '15 days'
+			WHEN '30d' THEN NOW() - INTERVAL '30 days'
+			WHEN '90d' THEN NOW() - INTERVAL '90 days'
+			WHEN '6m'  THEN NOW() - INTERVAL '6 months'
+			WHEN '12m' THEN NOW() - INTERVAL '12 months'
+			ELSE NOW() - INTERVAL '30 days'
+		END
+	`
+
+	// ----------------------------------------------------------
 	// Main platform counters
 	// ----------------------------------------------------------
 
-	err := r.db.QueryRow(ctx, `
+	query := `
+		WITH period AS (
+			SELECT
+				` + periodStart + ` AS start_at,
+				NOW() AS end_at
+		)
 		SELECT
-			(SELECT COUNT(*) FROM users),
-			(SELECT COUNT(*) FROM organizations),
-			(
-				SELECT COUNT(DISTINCT organization_id)
-				FROM organization_members
-			),
-			(SELECT COUNT(*) FROM events),
-			(SELECT COUNT(*) FROM events WHERE status = 'published'),
-			(SELECT COUNT(*) FROM events WHERE status = 'draft'),
-			(SELECT COUNT(*) FROM events WHERE status = 'cancelled'),
-			(SELECT COUNT(*) FROM events WHERE status = 'completed'),
-			(SELECT COUNT(*) FROM registrations),
+
 			(
 				SELECT COUNT(*)
-				FROM registrations
-				WHERE status != 'cancelled'
+				FROM users u
+				CROSS JOIN period p
+				WHERE u.created_at >= p.start_at
+				  AND u.created_at < p.end_at
 			),
-			(SELECT COUNT(*) FROM tickets),
-			(SELECT COUNT(*) FROM checkins)
-	`).Scan(
+
+			(
+				SELECT COUNT(*)
+				FROM organizations o
+				CROSS JOIN period p
+				WHERE o.created_at >= p.start_at
+				  AND o.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(DISTINCT e.organization_id)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.status = 'published'
+				  AND e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.status = 'draft'
+				  AND e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.status = 'cancelled'
+				  AND e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM events e
+				CROSS JOIN period p
+				WHERE e.status = 'completed'
+				  AND e.created_at >= p.start_at
+				  AND e.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM registrations reg
+				CROSS JOIN period p
+				WHERE reg.created_at >= p.start_at
+				  AND reg.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM registrations reg
+				CROSS JOIN period p
+				WHERE reg.status != 'cancelled'
+				  AND reg.created_at >= p.start_at
+				  AND reg.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM tickets t
+				CROSS JOIN period p
+				WHERE t.created_at >= p.start_at
+				  AND t.created_at < p.end_at
+			),
+
+			(
+				SELECT COUNT(*)
+				FROM checkins c
+				CROSS JOIN period p
+				WHERE c.checked_in_at >= p.start_at
+				  AND c.checked_in_at < p.end_at
+			)
+
+	`
+
+	err := r.db.QueryRow(
+		ctx,
+		query,
+		analyticsRange,
+	).Scan(
 		&stats.Users,
 		&stats.Organizations,
 		&stats.ActiveOrganizations,
@@ -85,21 +196,29 @@ func (r *Repository) GetPlatformStats(
 
 	err = r.db.QueryRow(ctx, `
 		SELECT
-			(SELECT COUNT(*)
-			 FROM users
-			 WHERE created_at >= date_trunc('month', NOW())),
+			(
+				SELECT COUNT(*)
+				FROM users
+				WHERE created_at >= date_trunc('month', NOW())
+			),
 
-			(SELECT COUNT(*)
-			 FROM organizations
-			 WHERE created_at >= date_trunc('month', NOW())),
+			(
+				SELECT COUNT(*)
+				FROM organizations
+				WHERE created_at >= date_trunc('month', NOW())
+			),
 
-			(SELECT COUNT(*)
-			 FROM events
-			 WHERE created_at >= date_trunc('month', NOW())),
+			(
+				SELECT COUNT(*)
+				FROM events
+				WHERE created_at >= date_trunc('month', NOW())
+			),
 
-			(SELECT COUNT(*)
-			 FROM registrations
-			 WHERE created_at >= date_trunc('month', NOW()))
+			(
+				SELECT COUNT(*)
+				FROM registrations
+				WHERE created_at >= date_trunc('month', NOW())
+			)
 	`).Scan(
 		&stats.UsersThisMonth,
 		&stats.OrganizationsThisMonth,
@@ -112,10 +231,14 @@ func (r *Repository) GetPlatformStats(
 	}
 
 	// ----------------------------------------------------------
-	// Monthly activity
+	// Range-aware activity
 	// ----------------------------------------------------------
 
-	stats.Monthly, err = r.getPlatformMonthlyStats(ctx)
+	stats.Monthly, err = r.getPlatformMonthlyStats(
+		ctx,
+		analyticsRange,
+	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +247,11 @@ func (r *Repository) GetPlatformStats(
 	// Top organizations
 	// ----------------------------------------------------------
 
-	stats.TopOrganizations, err = r.getTopOrganizations(ctx)
+	stats.TopOrganizations, err = r.getTopOrganizations(
+		ctx,
+		analyticsRange,
+	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +260,12 @@ func (r *Repository) GetPlatformStats(
 	// Top events
 	// ----------------------------------------------------------
 
-	stats.TopEvents, err = r.getTopEvents(ctx, 5)
+	stats.TopEvents, err = r.getTopEvents(
+		ctx,
+		5,
+		analyticsRange,
+	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -141,67 +273,211 @@ func (r *Repository) GetPlatformStats(
 	return stats, nil
 }
 
+// ============================================================
+// PLATFORM MONTHLY / RANGE ACTIVITY
+// ============================================================
+
 func (r *Repository) getPlatformMonthlyStats(
 	ctx context.Context,
+	analyticsRange string,
 ) ([]MonthlyStats, error) {
 
-	rows, err := r.db.Query(ctx, `
-		WITH months AS (
-			SELECT generate_series(
-				date_trunc('month', NOW()) - INTERVAL '5 months',
-				date_trunc('month', NOW()),
-				INTERVAL '1 month'
-			) AS month
+	query := `
+		WITH settings AS (
+			SELECT
+				CASE $1
+					WHEN '7d'
+						THEN NOW() - INTERVAL '7 days'
+
+					WHEN '15d'
+						THEN NOW() - INTERVAL '15 days'
+
+					WHEN '30d'
+						THEN NOW() - INTERVAL '30 days'
+
+					WHEN '90d'
+						THEN NOW() - INTERVAL '90 days'
+
+					WHEN '6m'
+						THEN NOW() - INTERVAL '6 months'
+
+					WHEN '12m'
+						THEN NOW() - INTERVAL '12 months'
+
+					ELSE NOW() - INTERVAL '30 days'
+				END AS start_at,
+
+				NOW() AS end_at,
+
+				CASE $1
+					WHEN '90d'
+						THEN INTERVAL '7 days'
+
+					WHEN '6m'
+						THEN INTERVAL '1 month'
+
+					WHEN '12m'
+						THEN INTERVAL '1 month'
+
+					ELSE INTERVAL '1 day'
+				END AS bucket_size
+		),
+
+		buckets AS (
+			SELECT
+				generate_series(
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN date_trunc(
+								'month',
+								(SELECT start_at FROM settings)
+							)
+
+						WHEN $1 = '90d'
+							THEN date_trunc(
+								'week',
+								(SELECT start_at FROM settings)
+							)
+
+						ELSE date_trunc(
+							'day',
+							(SELECT start_at FROM settings)
+						)
+					END,
+
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN date_trunc('month', NOW())
+
+						WHEN $1 = '90d'
+							THEN date_trunc('week', NOW())
+
+						ELSE date_trunc('day', NOW())
+					END,
+
+					(SELECT bucket_size FROM settings)
+				) AS bucket
 		)
 
 		SELECT
-			TO_CHAR(m.month, 'YYYY-MM') AS month,
+
+			CASE
+				WHEN $1 IN ('6m', '12m')
+					THEN TO_CHAR(b.bucket, 'YYYY-MM')
+
+				WHEN $1 = '90d'
+					THEN TO_CHAR(b.bucket, 'YYYY-MM-DD')
+
+				ELSE TO_CHAR(b.bucket, 'YYYY-MM-DD')
+			END AS period,
 
 			(
 				SELECT COUNT(*)
 				FROM users u
-				WHERE u.created_at >= m.month
-				  AND u.created_at < m.month + INTERVAL '1 month'
-			),
+				WHERE u.created_at >= b.bucket
+				  AND u.created_at <
+					b.bucket +
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $1 = '90d'
+							THEN INTERVAL '7 days'
+
+						ELSE INTERVAL '1 day'
+					END
+				  AND u.created_at <= NOW()
+			) AS users,
 
 			(
 				SELECT COUNT(*)
 				FROM organizations o
-				WHERE o.created_at >= m.month
-				  AND o.created_at < m.month + INTERVAL '1 month'
-			),
+				WHERE o.created_at >= b.bucket
+				  AND o.created_at <
+					b.bucket +
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $1 = '90d'
+							THEN INTERVAL '7 days'
+
+						ELSE INTERVAL '1 day'
+					END
+				  AND o.created_at <= NOW()
+			) AS organizations,
 
 			(
 				SELECT COUNT(*)
 				FROM events e
-				WHERE e.created_at >= m.month
-				  AND e.created_at < m.month + INTERVAL '1 month'
-			),
+				WHERE e.created_at >= b.bucket
+				  AND e.created_at <
+					b.bucket +
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $1 = '90d'
+							THEN INTERVAL '7 days'
+
+						ELSE INTERVAL '1 day'
+					END
+				  AND e.created_at <= NOW()
+			) AS events,
 
 			(
 				SELECT COUNT(*)
-				FROM registrations r
-				WHERE r.created_at >= m.month
-				  AND r.created_at < m.month + INTERVAL '1 month'
-			),
+				FROM registrations reg
+				WHERE reg.created_at >= b.bucket
+				  AND reg.created_at <
+					b.bucket +
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $1 = '90d'
+							THEN INTERVAL '7 days'
+
+						ELSE INTERVAL '1 day'
+					END
+				  AND reg.created_at <= NOW()
+			) AS registrations,
 
 			(
 				SELECT COUNT(*)
 				FROM checkins c
-				WHERE c.checked_in_at >= m.month
-				  AND c.checked_in_at < m.month + INTERVAL '1 month'
-			)
+				WHERE c.checked_in_at >= b.bucket
+				  AND c.checked_in_at <
+					b.bucket +
+					CASE
+						WHEN $1 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
 
-		FROM months m
-		ORDER BY m.month
-	`)
+						WHEN $1 = '90d'
+							THEN INTERVAL '7 days'
+
+						ELSE INTERVAL '1 day'
+					END
+				  AND c.checked_in_at <= NOW()
+			) AS check_ins
+
+		FROM buckets b
+		ORDER BY b.bucket
+	`
+
+	rows, err := r.db.Query(
+		ctx,
+		query,
+		analyticsRange,
+	)
 
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
-	result := make([]MonthlyStats, 0, 6)
+	result := make([]MonthlyStats, 0)
 
 	for rows.Next() {
 
@@ -230,20 +506,48 @@ func (r *Repository) getPlatformMonthlyStats(
 	return result, nil
 }
 
+// ============================================================
+// TOP ORGANIZATIONS
+// ============================================================
+
 func (r *Repository) getTopOrganizations(
 	ctx context.Context,
+	analyticsRange string,
 ) ([]TopOrganization, error) {
 
-	rows, err := r.db.Query(ctx, `
+	query := `
+		WITH period AS (
+			SELECT
+				CASE $1
+					WHEN '7d'  THEN NOW() - INTERVAL '7 days'
+					WHEN '15d' THEN NOW() - INTERVAL '15 days'
+					WHEN '30d' THEN NOW() - INTERVAL '30 days'
+					WHEN '90d' THEN NOW() - INTERVAL '90 days'
+					WHEN '6m'  THEN NOW() - INTERVAL '6 months'
+					WHEN '12m' THEN NOW() - INTERVAL '12 months'
+					ELSE NOW() - INTERVAL '30 days'
+				END AS start_at,
+
+				NOW() AS end_at
+		)
+
 		SELECT
 			o.id,
 			o.name,
 
-			COUNT(DISTINCT e.id) AS events,
+			COUNT(
+				DISTINCT CASE
+					WHEN e.created_at >= p.start_at
+					 AND e.created_at < p.end_at
+					THEN e.id
+				END
+			) AS events,
 
 			COUNT(
 				DISTINCT CASE
 					WHEN reg.status != 'cancelled'
+					 AND reg.created_at >= p.start_at
+					 AND reg.created_at < p.end_at
 					THEN reg.id
 				END
 			) AS registrations,
@@ -251,6 +555,8 @@ func (r *Repository) getTopOrganizations(
 			COUNT(DISTINCT om.user_id) AS members
 
 		FROM organizations o
+
+		CROSS JOIN period p
 
 		LEFT JOIN events e
 			ON e.organization_id = o.id
@@ -261,16 +567,48 @@ func (r *Repository) getTopOrganizations(
 		LEFT JOIN organization_members om
 			ON om.organization_id = o.id
 
-		GROUP BY o.id, o.name
+		GROUP BY
+			o.id,
+			o.name
 
-		ORDER BY registrations DESC, events DESC, o.id
+		HAVING
+			COUNT(
+				DISTINCT CASE
+					WHEN e.created_at >= p.start_at
+					 AND e.created_at < p.end_at
+					THEN e.id
+				END
+			) > 0
+
+			OR
+
+			COUNT(
+				DISTINCT CASE
+					WHEN reg.status != 'cancelled'
+					 AND reg.created_at >= p.start_at
+					 AND reg.created_at < p.end_at
+					THEN reg.id
+				END
+			) > 0
+
+		ORDER BY
+			registrations DESC,
+			events DESC,
+			o.id
 
 		LIMIT 5
-	`)
+	`
+
+	rows, err := r.db.Query(
+		ctx,
+		query,
+		analyticsRange,
+	)
 
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]TopOrganization, 0, 5)
@@ -301,12 +639,32 @@ func (r *Repository) getTopOrganizations(
 	return result, nil
 }
 
+// ============================================================
+// TOP EVENTS
+// ============================================================
+
 func (r *Repository) getTopEvents(
 	ctx context.Context,
 	limit int,
+	analyticsRange string,
 ) ([]TopEvent, error) {
 
-	rows, err := r.db.Query(ctx, `
+	query := `
+		WITH period AS (
+			SELECT
+				CASE $2
+					WHEN '7d'  THEN NOW() - INTERVAL '7 days'
+					WHEN '15d' THEN NOW() - INTERVAL '15 days'
+					WHEN '30d' THEN NOW() - INTERVAL '30 days'
+					WHEN '90d' THEN NOW() - INTERVAL '90 days'
+					WHEN '6m'  THEN NOW() - INTERVAL '6 months'
+					WHEN '12m' THEN NOW() - INTERVAL '12 months'
+					ELSE NOW() - INTERVAL '30 days'
+				END AS start_at,
+
+				NOW() AS end_at
+		)
+
 		SELECT
 			e.id,
 			e.organization_id,
@@ -318,13 +676,23 @@ func (r *Repository) getTopEvents(
 			COUNT(
 				DISTINCT CASE
 					WHEN r.status != 'cancelled'
+					 AND r.created_at >= p.start_at
+					 AND r.created_at < p.end_at
 					THEN r.id
 				END
 			) AS registrations,
 
-			COUNT(DISTINCT c.id) AS check_ins
+			COUNT(
+				DISTINCT CASE
+					WHEN c.checked_in_at >= p.start_at
+					 AND c.checked_in_at < p.end_at
+					THEN c.id
+				END
+			) AS check_ins
 
 		FROM events e
+
+		CROSS JOIN period p
 
 		LEFT JOIN registrations r
 			ON r.event_id = e.id
@@ -341,16 +709,37 @@ func (r *Repository) getTopEvents(
 			e.title,
 			e.status,
 			e.start_time,
-			e.capacity
+			e.capacity,
+			e.created_at
 
-		ORDER BY registrations DESC, e.created_at DESC
+		HAVING
+			COUNT(
+				DISTINCT CASE
+					WHEN r.status != 'cancelled'
+					 AND r.created_at >= p.start_at
+					 AND r.created_at < p.end_at
+					THEN r.id
+				END
+			) > 0
+
+		ORDER BY
+			registrations DESC,
+			e.created_at DESC
 
 		LIMIT $1
-	`, limit)
+	`
+
+	rows, err := r.db.Query(
+		ctx,
+		query,
+		limit,
+		analyticsRange,
+	)
 
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]TopEvent, 0, limit)
@@ -406,6 +795,10 @@ func (r *Repository) GetOrganizationStats(
 		OrganizationID: organizationID,
 	}
 
+	// ----------------------------------------------------------
+	// Organization name
+	// ----------------------------------------------------------
+
 	err := r.db.QueryRow(ctx, `
 		SELECT name
 		FROM organizations
@@ -421,22 +814,14 @@ func (r *Repository) GetOrganizationStats(
 	// ----------------------------------------------------------
 	// Selected analytics period
 	// ----------------------------------------------------------
-	//
-	// 7d  = last 7 days
-	// 30d = last 30 days
-	// 90d = last 90 days
-	// 12m = last 12 months
-	//
-	// The service validates the range before it reaches the
-	// repository. CASE is still used here so no SQL is built
-	// dynamically.
-	// ----------------------------------------------------------
 
 	periodStart := `
 		CASE $2
 			WHEN '7d'  THEN NOW() - INTERVAL '7 days'
+			WHEN '15d' THEN NOW() - INTERVAL '15 days'
 			WHEN '30d' THEN NOW() - INTERVAL '30 days'
 			WHEN '90d' THEN NOW() - INTERVAL '90 days'
+			WHEN '6m'  THEN NOW() - INTERVAL '6 months'
 			WHEN '12m' THEN NOW() - INTERVAL '12 months'
 			ELSE NOW() - INTERVAL '30 days'
 		END
@@ -452,7 +837,9 @@ func (r *Repository) GetOrganizationStats(
 				` + periodStart + ` AS start_at,
 				NOW() AS end_at
 		)
+
 		SELECT
+
 			(
 				SELECT COUNT(*)
 				FROM events e
@@ -616,6 +1003,7 @@ func (r *Repository) GetOrganizationStats(
 
 	err = r.db.QueryRow(ctx, `
 		SELECT
+
 			(
 				SELECT COUNT(*)
 				FROM registrations r
@@ -631,6 +1019,7 @@ func (r *Repository) GetOrganizationStats(
 				WHERE organization_id = $1
 				  AND created_at >= date_trunc('month', NOW())
 			)
+
 	`, organizationID).Scan(
 		&stats.RegistrationsThisMonth,
 		&stats.EventsThisMonth,
@@ -649,6 +1038,7 @@ func (r *Repository) GetOrganizationStats(
 		organizationID,
 		analyticsRange,
 	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -663,13 +1053,13 @@ func (r *Repository) GetOrganizationStats(
 		5,
 		analyticsRange,
 	)
+
 	if err != nil {
 		return nil, err
 	}
 
 	// ----------------------------------------------------------
 	// Upcoming events are intentionally NOT range limited.
-	// They represent future operational activity.
 	// ----------------------------------------------------------
 
 	stats.Upcoming, err = r.getUpcomingEvents(
@@ -677,6 +1067,7 @@ func (r *Repository) GetOrganizationStats(
 		organizationID,
 		5,
 	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -684,31 +1075,54 @@ func (r *Repository) GetOrganizationStats(
 	return stats, nil
 }
 
+// ============================================================
+// ORGANIZATION MONTHLY / RANGE ACTIVITY
+// ============================================================
+
 func (r *Repository) getOrganizationMonthlyStats(
 	ctx context.Context,
 	organizationID int64,
 	analyticsRange string,
 ) ([]MonthlyStats, error) {
 
-	// 7d / 30d  -> daily points
-	// 90d        -> weekly points
-	// 12m        -> monthly points
 	query := `
 		WITH settings AS (
 			SELECT
+
 				CASE $2
-					WHEN '7d'  THEN NOW() - INTERVAL '7 days'
-					WHEN '30d' THEN NOW() - INTERVAL '30 days'
-					WHEN '90d' THEN NOW() - INTERVAL '90 days'
-					WHEN '12m' THEN NOW() - INTERVAL '12 months'
+					WHEN '7d'
+						THEN NOW() - INTERVAL '7 days'
+
+					WHEN '15d'
+						THEN NOW() - INTERVAL '15 days'
+
+					WHEN '30d'
+						THEN NOW() - INTERVAL '30 days'
+
+					WHEN '90d'
+						THEN NOW() - INTERVAL '90 days'
+
+					WHEN '6m'
+						THEN NOW() - INTERVAL '6 months'
+
+					WHEN '12m'
+						THEN NOW() - INTERVAL '12 months'
+
 					ELSE NOW() - INTERVAL '30 days'
 				END AS start_at,
 
 				NOW() AS end_at,
 
 				CASE $2
-					WHEN '90d' THEN INTERVAL '7 days'
-					WHEN '12m' THEN INTERVAL '1 month'
+					WHEN '90d'
+						THEN INTERVAL '7 days'
+
+					WHEN '6m'
+						THEN INTERVAL '1 month'
+
+					WHEN '12m'
+						THEN INTERVAL '1 month'
+
 					ELSE INTERVAL '1 day'
 				END AS bucket_size
 		),
@@ -716,17 +1130,20 @@ func (r *Repository) getOrganizationMonthlyStats(
 		buckets AS (
 			SELECT
 				generate_series(
+
 					CASE
-						WHEN $2 = '12m'
+						WHEN $2 IN ('6m', '12m')
 							THEN date_trunc(
 								'month',
 								(SELECT start_at FROM settings)
 							)
+
 						WHEN $2 = '90d'
 							THEN date_trunc(
 								'week',
 								(SELECT start_at FROM settings)
 							)
+
 						ELSE date_trunc(
 							'day',
 							(SELECT start_at FROM settings)
@@ -734,27 +1151,34 @@ func (r *Repository) getOrganizationMonthlyStats(
 					END,
 
 					CASE
-						WHEN $2 = '12m'
+						WHEN $2 IN ('6m', '12m')
 							THEN date_trunc('month', NOW())
+
 						WHEN $2 = '90d'
 							THEN date_trunc('week', NOW())
+
 						ELSE date_trunc('day', NOW())
 					END,
 
 					(SELECT bucket_size FROM settings)
+
 				) AS bucket
 		)
 
 		SELECT
+
 			CASE
-				WHEN $2 = '12m'
+				WHEN $2 IN ('6m', '12m')
 					THEN TO_CHAR(b.bucket, 'YYYY-MM')
+
 				WHEN $2 = '90d'
 					THEN TO_CHAR(b.bucket, 'YYYY-MM-DD')
+
 				ELSE TO_CHAR(b.bucket, 'YYYY-MM-DD')
 			END AS period,
 
 			0::BIGINT AS users,
+
 			0::BIGINT AS organizations,
 
 			(
@@ -762,10 +1186,15 @@ func (r *Repository) getOrganizationMonthlyStats(
 				FROM events e
 				WHERE e.organization_id = $1
 				  AND e.created_at >= b.bucket
-				  AND e.created_at < b.bucket +
+				  AND e.created_at <
+					b.bucket +
 					CASE
-						WHEN $2 = '12m' THEN INTERVAL '1 month'
-						WHEN $2 = '90d' THEN INTERVAL '7 days'
+						WHEN $2 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $2 = '90d'
+							THEN INTERVAL '7 days'
+
 						ELSE INTERVAL '1 day'
 					END
 				  AND e.created_at <= NOW()
@@ -778,10 +1207,15 @@ func (r *Repository) getOrganizationMonthlyStats(
 					ON e.id = r.event_id
 				WHERE e.organization_id = $1
 				  AND r.created_at >= b.bucket
-				  AND r.created_at < b.bucket +
+				  AND r.created_at <
+					b.bucket +
 					CASE
-						WHEN $2 = '12m' THEN INTERVAL '1 month'
-						WHEN $2 = '90d' THEN INTERVAL '7 days'
+						WHEN $2 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $2 = '90d'
+							THEN INTERVAL '7 days'
+
 						ELSE INTERVAL '1 day'
 					END
 				  AND r.created_at <= NOW()
@@ -798,10 +1232,15 @@ func (r *Repository) getOrganizationMonthlyStats(
 					ON e.id = r.event_id
 				WHERE e.organization_id = $1
 				  AND c.checked_in_at >= b.bucket
-				  AND c.checked_in_at < b.bucket +
+				  AND c.checked_in_at <
+					b.bucket +
 					CASE
-						WHEN $2 = '12m' THEN INTERVAL '1 month'
-						WHEN $2 = '90d' THEN INTERVAL '7 days'
+						WHEN $2 IN ('6m', '12m')
+							THEN INTERVAL '1 month'
+
+						WHEN $2 = '90d'
+							THEN INTERVAL '7 days'
+
 						ELSE INTERVAL '1 day'
 					END
 				  AND c.checked_in_at <= NOW()
@@ -821,11 +1260,13 @@ func (r *Repository) getOrganizationMonthlyStats(
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]MonthlyStats, 0)
 
 	for rows.Next() {
+
 		var item MonthlyStats
 
 		err := rows.Scan(
@@ -851,6 +1292,10 @@ func (r *Repository) getOrganizationMonthlyStats(
 	return result, nil
 }
 
+// ============================================================
+// ORGANIZATION TOP EVENTS
+// ============================================================
+
 func (r *Repository) getOrganizationTopEvents(
 	ctx context.Context,
 	organizationID int64,
@@ -862,12 +1307,27 @@ func (r *Repository) getOrganizationTopEvents(
 		WITH period AS (
 			SELECT
 				CASE $3
-					WHEN '7d'  THEN NOW() - INTERVAL '7 days'
-					WHEN '30d' THEN NOW() - INTERVAL '30 days'
-					WHEN '90d' THEN NOW() - INTERVAL '90 days'
-					WHEN '12m' THEN NOW() - INTERVAL '12 months'
+					WHEN '7d'
+						THEN NOW() - INTERVAL '7 days'
+
+					WHEN '15d'
+						THEN NOW() - INTERVAL '15 days'
+
+					WHEN '30d'
+						THEN NOW() - INTERVAL '30 days'
+
+					WHEN '90d'
+						THEN NOW() - INTERVAL '90 days'
+
+					WHEN '6m'
+						THEN NOW() - INTERVAL '6 months'
+
+					WHEN '12m'
+						THEN NOW() - INTERVAL '12 months'
+
 					ELSE NOW() - INTERVAL '30 days'
 				END AS start_at,
+
 				NOW() AS end_at
 		)
 
@@ -917,18 +1377,22 @@ func (r *Repository) getOrganizationTopEvents(
 			e.title,
 			e.status,
 			e.start_time,
-			e.capacity
+			e.capacity,
+			e.created_at
 
-		HAVING COUNT(
-			DISTINCT CASE
-				WHEN r.status != 'cancelled'
-				 AND r.created_at >= p.start_at
-				 AND r.created_at < p.end_at
-				THEN r.id
-			END
-		) > 0
+		HAVING
+			COUNT(
+				DISTINCT CASE
+					WHEN r.status != 'cancelled'
+					 AND r.created_at >= p.start_at
+					 AND r.created_at < p.end_at
+					THEN r.id
+				END
+			) > 0
 
-		ORDER BY registrations DESC, e.created_at DESC
+		ORDER BY
+			registrations DESC,
+			e.created_at DESC
 
 		LIMIT $2
 	`
@@ -944,11 +1408,13 @@ func (r *Repository) getOrganizationTopEvents(
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]TopEvent, 0, limit)
 
 	for rows.Next() {
+
 		var item TopEvent
 
 		err := rows.Scan(
@@ -980,6 +1446,10 @@ func (r *Repository) getOrganizationTopEvents(
 
 	return result, nil
 }
+
+// ============================================================
+// UPCOMING EVENTS
+// ============================================================
 
 func (r *Repository) getUpcomingEvents(
 	ctx context.Context,
@@ -1041,6 +1511,7 @@ func (r *Repository) getUpcomingEvents(
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]UpcomingEvent, 0, limit)
@@ -1093,6 +1564,7 @@ func (r *Repository) GetStaffStats(
 
 	err := r.db.QueryRow(ctx, `
 		SELECT
+
 			(
 				SELECT COUNT(*)
 				FROM events
@@ -1135,6 +1607,7 @@ func (r *Repository) GetStaffStats(
 				  AND c.checked_in_at >= CURRENT_DATE
 				  AND c.checked_in_at < CURRENT_DATE + INTERVAL '1 day'
 			)
+
 	`,
 		organizationID,
 	).Scan(
@@ -1148,7 +1621,8 @@ func (r *Repository) GetStaffStats(
 		return nil, err
 	}
 
-	stats.PendingCheckIns = stats.ExpectedAttendees - stats.CheckInsToday
+	stats.PendingCheckIns =
+		stats.ExpectedAttendees - stats.CheckInsToday
 
 	if stats.PendingCheckIns < 0 {
 		stats.PendingCheckIns = 0
@@ -1165,6 +1639,10 @@ func (r *Repository) GetStaffStats(
 
 	return stats, nil
 }
+
+// ============================================================
+// TODAY'S EVENTS
+// ============================================================
 
 func (r *Repository) getTodayEvents(
 	ctx context.Context,
@@ -1223,6 +1701,7 @@ func (r *Repository) getTodayEvents(
 	if err != nil {
 		return nil, err
 	}
+
 	defer rows.Close()
 
 	result := make([]UpcomingEvent, 0)
@@ -1270,5 +1749,7 @@ func calculateAttendanceRate(
 		return 0
 	}
 
-	return float64(checkIns) / float64(registrations) * 100
+	return float64(checkIns) /
+		float64(registrations) *
+		100
 }

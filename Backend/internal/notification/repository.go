@@ -19,7 +19,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-// CreateNotification creates a notification for a user.
+// CreateNotification creates a notification for a specific user.
 func (r *Repository) CreateNotification(
 	ctx context.Context,
 	userID int64,
@@ -61,6 +61,53 @@ func (r *Repository) CreateNotification(
 	return notificationID, nil
 }
 
+// CreatePlatformOwnerNotification creates the same system notification
+// for every platform owner.
+//
+// Platform owners are regular users with users.role = 'platform_owner'.
+// This keeps notification ownership tied to the existing users table
+// instead of introducing a separate owner notification table.
+func (r *Repository) CreatePlatformOwnerNotification(
+	ctx context.Context,
+	notificationType string,
+	message string,
+) (int64, error) {
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var createdCount int64
+
+	result, err := r.db.Exec(ctx, `
+		INSERT INTO notifications (
+			user_id,
+			type,
+			message,
+			status,
+			created_at
+		)
+		SELECT
+			id,
+			$1,
+			$2,
+			'unread',
+			NOW()
+		FROM users
+		WHERE LOWER(COALESCE(role, '')) = 'platform_owner'
+	`,
+		notificationType,
+		message,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	createdCount = result.RowsAffected()
+
+	return createdCount, nil
+}
+
 // GetUserNotifications returns paginated notifications for a user.
 func (r *Repository) GetUserNotifications(
 	ctx context.Context,
@@ -80,7 +127,9 @@ func (r *Repository) GetUserNotifications(
 		SELECT COUNT(*)
 		FROM notifications
 		WHERE user_id = $1
-	`, userID).Scan(&total)
+	`,
+		userID,
+	).Scan(&total)
 
 	if err != nil {
 		return nil, 0, err
@@ -128,7 +177,10 @@ func (r *Repository) GetUserNotifications(
 			return nil, 0, err
 		}
 
-		notifications = append(notifications, notification)
+		notifications = append(
+			notifications,
+			notification,
+		)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -154,7 +206,9 @@ func (r *Repository) GetUnreadCount(
 		FROM notifications
 		WHERE user_id = $1
 		  AND status = 'unread'
-	`, userID).Scan(&count)
+	`,
+		userID,
+	).Scan(&count)
 
 	if err != nil {
 		return 0, err
@@ -166,6 +220,7 @@ func (r *Repository) GetUnreadCount(
 // MarkNotificationAsRead marks a notification as read.
 //
 // This is intentionally idempotent:
+//
 // - unread notification -> becomes read
 // - already-read notification -> no error
 // - notification belonging to another/non-existent user -> error

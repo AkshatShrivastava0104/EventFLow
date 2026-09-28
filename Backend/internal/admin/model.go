@@ -38,6 +38,7 @@ type AdminOrganization struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
+	Website     string    `json:"website"`
 	OwnerID     *int64    `json:"owner_id"`
 	OwnerName   string    `json:"owner_name"`
 	OwnerEmail  string    `json:"owner_email"`
@@ -58,6 +59,59 @@ type AdminUser struct {
 	CreatedAt         time.Time `json:"created_at"`
 }
 
+// AdminRegistration represents a platform-owner view of a registration.
+//
+// This is intentionally read-only. It contains the registration,
+// event, organization, ticket and check-in information required by
+// the owner dashboard.
+type AdminRegistration struct {
+	ID               int64  `json:"id"`
+	UserID           int64  `json:"user_id"`
+	UserName         string  `json:"user_name"`
+	UserEmail        string  `json:"user_email"`
+	EventID          int64  `json:"event_id"`
+	EventTitle       string  `json:"event_title"`
+	OrganizationID   int64  `json:"organization_id"`
+	OrganizationName string  `json:"organization_name"`
+
+	RegistrationStatus string    `json:"registration_status"`
+	PaymentStatus      string    `json:"payment_status"`
+	RegisteredAt       time.Time `json:"registered_at"`
+
+	Ticket  *AdminRegistrationTicket  `json:"ticket,omitempty"`
+	Checkin *AdminRegistrationCheckin `json:"checkin,omitempty"`
+
+	Activity []AdminRegistrationActivity `json:"activity"`
+}
+
+// AdminRegistrationTicket contains ticket information linked to a registration.
+type AdminRegistrationTicket struct {
+	ID           int64     `json:"id"`
+	TicketNumber string    `json:"ticket_number"`
+	QRCode       string    `json:"qr_code"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// AdminRegistrationCheckin contains the actual check-in record.
+type AdminRegistrationCheckin struct {
+	ID             int64     `json:"id"`
+	TicketID       int64     `json:"ticket_id"`
+	VolunteerID    *int64    `json:"volunteer_id,omitempty"`
+	VolunteerName  string    `json:"volunteer_name,omitempty"`
+	VolunteerEmail string    `json:"volunteer_email,omitempty"`
+	CheckedInAt    time.Time `json:"checked_in_at"`
+}
+
+// AdminRegistrationActivity represents a real activity derived from
+// persisted registration/ticket/check-in records.
+type AdminRegistrationActivity struct {
+	Type        string    `json:"type"`
+	Label       string    `json:"label"`
+	OccurredAt  time.Time `json:"occurred_at"`
+	Description string    `json:"description,omitempty"`
+}
+
+// Pagination is shared by admin paginated endpoints.
 type Pagination struct {
 	Page       int `json:"page"`
 	Limit      int `json:"limit"`
@@ -73,4 +127,10 @@ type PaginatedOrganizations struct {
 type PaginatedUsers struct {
 	Users      []AdminUser `json:"users"`
 	Pagination Pagination  `json:"pagination"`
+}
+
+// PaginatedRegistrations is the platform-owner registrations response.
+type PaginatedRegistrations struct {
+	Registrations []AdminRegistration `json:"registrations"`
+	Pagination    Pagination           `json:"pagination"`
 }

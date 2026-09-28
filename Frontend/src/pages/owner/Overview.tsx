@@ -6,7 +6,6 @@ import {
   CalendarDays,
   TrendingUp,
   ArrowUpRight,
-  Plus,
   Building2,
   CheckCircle2,
 } from 'lucide-react';
@@ -14,7 +13,6 @@ import { StatsAPI } from '../../lib/queries';
 import { StatCard } from '../../components/ui/StatCard';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { Badge } from '../../components/ui/Badge';
-import { Button } from '../../components/ui/Button';
 import { fmtDate } from '../../lib/utils';
 import {
   AreaChart,
@@ -34,8 +32,10 @@ export function OwnerOverview() {
     isLoading,
     isError,
   } = useQuery({
-    queryKey: ['stats', 'platform'],
-    queryFn: StatsAPI.platform,
+    queryKey: ['stats', 'platform', '30d'],
+    queryFn: () => StatsAPI.platform('30d'),
+    staleTime: 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const stats = response?.stats ?? response;
@@ -64,14 +64,6 @@ export function OwnerOverview() {
           </p>
         </div>
 
-        <Link to="/dashboard/events/new">
-          <Button
-            variant="secondary"
-            leftIcon={<Plus className="h-4 w-4" />}
-          >
-            Create event
-          </Button>
-        </Link>
       </div>
 
       {/* =====================================================

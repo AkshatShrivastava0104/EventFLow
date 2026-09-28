@@ -14,6 +14,9 @@ import {
   Settings,
   ClipboardList,
   Timer,
+  UserRound,
+  Activity,
+  HeartPulse,
 } from 'lucide-react';
 
 const groups: NavGroup[] = [
@@ -69,24 +72,51 @@ const groups: NavGroup[] = [
           <Timer className="h-4 w-4" />
         ),
       },
+    ],
+  },
+
+  {
+    label: 'Platform',
+    items: [
       {
-        to: '/dashboard/tickets',
-        label: 'Tickets & Check-in',
+        to: '/dashboard/organizations',
+        label: 'Organizations',
         icon: (
-          <Ticket className="h-4 w-4" />
+          <Building2 className="h-4 w-4" />
+        ),
+      },
+      {
+        to: '/dashboard/users',
+        label: 'Users',
+        icon: (
+          <UserRound className="h-4 w-4" />
         ),
       },
     ],
   },
 
   {
-    label: 'Organization',
+    label: 'Monitoring',
     items: [
       {
-        to: '/dashboard/organization',
-        label: 'Organization',
+        to: '/dashboard/activity-logs',
+        label: 'Activity Logs',
         icon: (
-          <Building2 className="h-4 w-4" />
+          <Activity className="h-4 w-4" />
+        ),
+      },
+      {
+        to: '/dashboard/platform-tickets',
+        label: 'Platform Tickets',
+        icon: (
+          <Ticket className="h-4 w-4" />
+        ),
+      },
+      {
+        to: '/dashboard/system-health',
+        label: 'System Health',
+        icon: (
+          <HeartPulse className="h-4 w-4" />
         ),
       },
     ],

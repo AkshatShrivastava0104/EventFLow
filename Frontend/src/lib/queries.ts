@@ -11,7 +11,7 @@ import type {
 
 /* =========================================================
    Helpers
-========================================================= */
+   ========================================================= */
 
 function normalizeArray<T>(
   response: any,
@@ -129,6 +129,7 @@ function normalizeRegistration(
     ...registration,
 
     id: Number(registration?.id ?? 0),
+
     event_id: Number(
       registration?.event_id ??
       registration?.eventId ??
@@ -220,7 +221,7 @@ function normalizeTickets(
 
 /* =========================================================
    Events
-========================================================= */
+   ========================================================= */
 
 export const EventsAPI = {
   // GET /api/v1/events
@@ -432,7 +433,7 @@ export const EventsAPI = {
 
 /* =========================================================
    Registrations
-========================================================= */
+   ========================================================= */
 
 export const RegistrationsAPI = {
   // GET /api/v1/registrations/me
@@ -507,8 +508,242 @@ export const RegistrationsAPI = {
 };
 
 /* =========================================================
+   Admin / Platform Owner
+   ========================================================= */
+
+export type AuditLogFilters = {
+  search?: string;
+  action?: string;
+  entity?: string;
+  page?: number;
+  limit?: number;
+};
+
+export const AuditLogsAPI = {
+  // GET /api/v1/audit-logs
+  // Platform-owner only.
+  list: async (
+    params: AuditLogFilters = {},
+  ) => {
+    const response = await api.get(
+      '/audit-logs',
+      {
+        params: {
+          ...params,
+          page: params.page ?? 1,
+          limit: params.limit ?? 25,
+        },
+      },
+    );
+
+    return response.data;
+  },
+
+  // GET /api/v1/audit-logs/:id
+  // Platform-owner only.
+  get: async (
+    id: number | string,
+  ) => {
+    const response = await api.get(
+      `/audit-logs/${id}`,
+    );
+
+    return response.data;
+  },
+};
+
+export type AdminRegistrationFilters = {
+  search?: string;
+  event_id?: number | string;
+  organization_id?: number | string;
+  status?: string;
+  payment_status?: string;
+  checkin?: 'checked_in' | 'not_checked_in' | '';
+  from?: string;
+  to?: string;
+  sort?:
+  | 'newest'
+  | 'oldest'
+  | 'attendee_asc'
+  | 'attendee_desc'
+  | 'event_asc'
+  | 'event_desc'
+  | 'checkin_latest';
+  page?: number;
+  limit?: number;
+};
+
+export const AdminAPI = {
+  // GET /api/v1/admin/registrations
+  //
+  // Platform-owner only.
+  // Returns registration + attendee + event + organization +
+  // ticket + check-in + activity information.
+  listRegistrations: async (
+    params: AdminRegistrationFilters = {},
+  ) => {
+    const response = await api.get(
+      '/admin/registrations',
+      {
+        params: {
+          ...params,
+          page: params.page ?? 1,
+          limit: params.limit ?? 20,
+        },
+      },
+    );
+
+    return response.data;
+  },
+
+  // GET /api/v1/admin/organizations
+  listOrganizations: async (
+    params: Record<string, any> = {},
+  ) => {
+    const response = await api.get(
+      '/admin/organizations',
+      { params },
+    );
+
+    return response.data;
+  },
+
+  // GET /api/v1/admin/users
+  listUsers: async (
+    params: Record<string, any> = {},
+  ) => {
+    const response = await api.get(
+      '/admin/users',
+      { params },
+    );
+
+    return response.data;
+  },
+
+  // GET /api/v1/admin/waitlist
+  //
+  // Platform-owner only.
+  // Returns platform-wide waitlist entries with:
+  // attendee + event + organization + queue position +
+  // capacity + registered count + available spots.
+  listWaitlist: async (
+    params: {
+      search?: string;
+      event_id?: number | string;
+      organization_id?: number | string;
+      sort?:
+      | 'position_asc'
+      | 'position_desc'
+      | 'newest'
+      | 'oldest'
+      | 'attendee_asc'
+      | 'attendee_desc'
+      | 'event_asc'
+      | 'event_desc';
+      page?: number;
+      limit?: number;
+    } = {},
+  ) => {
+    const response = await api.get(
+      '/admin/waitlist',
+      {
+        params: {
+          ...params,
+          page: params.page ?? 1,
+          limit: params.limit ?? 20,
+        },
+      },
+    );
+
+    return response.data;
+  },
+
+  // POST /api/v1/admin/waitlist/events/:eventId/promote
+  promoteNextWaitlistUser: async (
+    eventId: number | string,
+  ) => {
+    const response = await api.post(
+      `/admin/waitlist/events/${eventId}/promote`,
+    );
+
+    return response.data;
+  },
+
+  // POST /api/v1/admin/waitlist/:waitlistId/promote
+  promoteWaitlistUser: async (
+    waitlistId: number | string,
+  ) => {
+    const response = await api.post(
+      `/admin/waitlist/${waitlistId}/promote`,
+    );
+
+    return response.data;
+  },
+
+  // DELETE /api/v1/admin/waitlist/:waitlistId
+  removeWaitlistUser: async (
+    waitlistId: number | string,
+  ) => {
+    const response = await api.delete(
+      `/admin/waitlist/${waitlistId}`,
+    );
+
+    return response.data;
+  },
+
+  // GET /api/v1/admin/stats
+  stats: async () => {
+    const response = await api.get(
+      '/admin/stats',
+    );
+
+    return response.data;
+  },
+};
+
+/* =========================================================
+   System Health
+   ========================================================= */
+
+export interface SystemHealthComponent {
+  status: string;
+  latency_ms: number;
+  message?: string;
+  last_checked: string;
+}
+
+export interface SystemHealth {
+  status: string;
+  environment: string;
+  app_name: string;
+  timestamp: string;
+  database: SystemHealthComponent;
+  redis: SystemHealthComponent;
+  api: SystemHealthComponent;
+}
+
+export interface SystemHealthResponse {
+  health: SystemHealth;
+}
+
+export const SystemHealthAPI = {
+  // GET /api/v1/system-health
+  //
+  // Platform-owner only.
+  // Checks API, PostgreSQL and Redis health.
+  get: async (): Promise<SystemHealthResponse> => {
+    const response =
+      await api.get<SystemHealthResponse>(
+        '/system-health',
+      );
+
+    return response.data;
+  },
+};
+
+/* =========================================================
    Tickets
-========================================================= */
+   ========================================================= */
 
 export const TicketsAPI = {
   // GET /api/v1/tickets/me
@@ -581,7 +816,7 @@ export const TicketsAPI = {
 
 /* =========================================================
    Organizations
-========================================================= */
+   ========================================================= */
 
 export const OrgsAPI = {
   // GET /api/v1/organizations
@@ -652,7 +887,7 @@ export const OrgsAPI = {
 
 /* =========================================================
    Staff / Organization Members
-========================================================= */
+   ========================================================= */
 
 export const StaffAPI = {
   // GET /api/v1/organizations/:organizationId/members
@@ -713,7 +948,7 @@ export const StaffAPI = {
 
 /* =========================================================
    Notifications
-========================================================= */
+   ========================================================= */
 
 export const NotificationsAPI = {
   // GET /api/v1/notifications
@@ -784,7 +1019,7 @@ export const NotificationsAPI = {
 
 /* =========================================================
    Waitlist
-========================================================= */
+   ========================================================= */
 
 export const WaitlistAPI = {
   // POST /api/v1/events/:eventId/waitlist
@@ -830,19 +1065,41 @@ export const WaitlistAPI = {
 
 /* =========================================================
    Stats
-========================================================= */
+   ========================================================= */
 
 export type AnalyticsRange =
   | '7d'
+  | '15d'
   | '30d'
   | '90d'
+  | '6m'
   | '12m';
 
 export const StatsAPI = {
   // GET /api/v1/stats/platform
-  platform: async () => {
+  //
+  // Platform-wide analytics.
+  //
+  // Supported ranges:
+  //   7d  = last 7 days
+  //   15d = last 15 days
+  //   30d = last 30 days
+  //   90d = last 90 days
+  //   6m  = last 6 months
+  //   12m = last 12 months
+  //
+  // Default:
+  //   30d
+  platform: async (
+    range: AnalyticsRange = '30d',
+  ) => {
     const response = await api.get(
       '/stats/platform',
+      {
+        params: {
+          range,
+        },
+      },
     );
 
     return response.data;
@@ -850,14 +1107,7 @@ export const StatsAPI = {
 
   // GET /api/v1/organizations/:organizationId/stats
   //
-  // Supported ranges:
-  //   7d  = last 7 days
-  //   30d = last 30 days
-  //   90d = last 90 days
-  //   12m = last 12 months
-  //
-  // Default:
-  //   30d
+  // Organization-scoped analytics.
   organization: async (
     organizationId: number | string,
     range: AnalyticsRange = '30d',
@@ -888,7 +1138,7 @@ export const StatsAPI = {
 
 /* =========================================================
    Payments
-========================================================= */
+   ========================================================= */
 
 export const PaymentsAPI = {
   /*

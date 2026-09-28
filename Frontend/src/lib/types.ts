@@ -11,6 +11,8 @@ export interface EventItem {
   description: string;
   category: string;
   cover_image: string | null;
+  cover_media_url?: string | null;
+  cover_media_type?: 'image' | 'video' | string;
   venue: string;
   address: string;
   city: string;
@@ -23,8 +25,8 @@ export interface EventItem {
   registered_count: number;
 
   // Registration state for the currently authenticated user.
-  // This is optional because public event APIs may not include it.
   is_registered?: boolean;
+
   registration_status?:
   | 'registered'
   | 'pending'
@@ -41,8 +43,10 @@ export interface EventItem {
   organizer_id: string;
   organizer_name?: string;
   org_id: number | null;
+  organization_id?: number | null;
   tags: string[];
   featured?: boolean;
+  visibility?: string;
   created_at: string;
 }
 
@@ -53,7 +57,6 @@ export interface Registration {
   user_email: string;
   user_name: string;
   user_phone?: string;
-
   ticket_type: string;
   quantity: number;
   total_amount: number;
@@ -90,7 +93,6 @@ export interface Ticket {
 
   attendee_name?: string;
   attendee_email?: string;
-
   checked_in: boolean;
   checked_in_at: string | null;
 
@@ -159,4 +161,124 @@ export interface WaitlistEntry {
   user_name: string;
   position: number;
   created_at: string;
+}
+
+/* =========================================================
+   Platform Owner / Admin
+   ========================================================= */
+
+export interface AdminRegistrationTicket {
+  id: number;
+  ticket_number: string;
+  qr_code: string;
+  created_at: string;
+}
+
+export interface AdminRegistrationCheckin {
+  id: number;
+  ticket_id: number;
+  volunteer_id?: number | null;
+  volunteer_name?: string;
+  volunteer_email?: string;
+  checked_in_at: string;
+}
+
+export interface AdminRegistrationActivity {
+  type:
+  | 'registration_created'
+  | 'ticket_created'
+  | 'checked_in';
+
+  label: string;
+  occurred_at: string;
+  description?: string;
+}
+
+export interface AdminRegistration {
+  id: number;
+
+  // Attendee
+  user_id: number;
+  user_name: string;
+  user_email: string;
+
+  // Event
+  event_id: number;
+  event_title: string;
+
+  // Organization
+  organization_id: number;
+  organization_name: string;
+
+  // Registration
+  registration_status: string;
+  payment_status: string;
+  registered_at: string;
+
+  // Ticket
+  ticket?: AdminRegistrationTicket | null;
+
+  // Check-in
+  checkin?: AdminRegistrationCheckin | null;
+
+  // Real persisted activity timeline.
+  activity: AdminRegistrationActivity[];
+}
+
+export interface AdminPagination {
+  page: number;
+  limit: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface PaginatedAdminRegistrations {
+  registrations: AdminRegistration[];
+  pagination: AdminPagination;
+}
+
+/* =========================================================
+   Platform Owner / Admin Waitlist
+   ========================================================= */
+
+export interface AdminWaitlistEntry {
+  id: number;
+
+  // Attendee
+  user_id: number;
+  user_name: string;
+  user_email: string;
+
+  // Event
+  event_id: number;
+  event_title: string;
+
+  // Organization
+  organization_id: number;
+  organization_name: string;
+
+  // Queue
+  position: number;
+  created_at: string;
+
+  // Event capacity / availability
+  event_capacity: number | null;
+  registered_count: number;
+  available_spots: number | null;
+
+  // Event timing
+  event_start_time: string | null;
+  event_end_time: string | null;
+
+  // Event state
+  event_status: string;
+
+  // Useful safety information
+  registration_status: string;
+  has_active_registration: boolean;
+}
+
+export interface PaginatedAdminWaitlist {
+  waitlist: AdminWaitlistEntry[];
+  pagination: AdminPagination;
 }

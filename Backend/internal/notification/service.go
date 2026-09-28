@@ -12,6 +12,7 @@ func NewService(repo *Repository) *Service {
 	}
 }
 
+// CreateNotification creates a notification for a specific user.
 func (s *Service) CreateNotification(
 	ctx context.Context,
 	userID int64,
@@ -22,6 +23,21 @@ func (s *Service) CreateNotification(
 	return s.repo.CreateNotification(
 		ctx,
 		userID,
+		notificationType,
+		message,
+	)
+}
+
+// CreatePlatformOwnerNotification creates a notification
+// for all platform owners.
+func (s *Service) CreatePlatformOwnerNotification(
+	ctx context.Context,
+	notificationType string,
+	message string,
+) (int64, error) {
+
+	return s.repo.CreatePlatformOwnerNotification(
+		ctx,
 		notificationType,
 		message,
 	)

@@ -22,6 +22,7 @@ func RegisterAdminRoutes(
 	admin.GET("/stats", handler.GetStats)
 	admin.GET("/organizations", handler.ListOrganizations)
 	admin.GET("/users", handler.ListUsers)
+	admin.GET("/registrations", handler.ListRegistrations)
 }
 
 func requirePlatformOwner() gin.HandlerFunc {

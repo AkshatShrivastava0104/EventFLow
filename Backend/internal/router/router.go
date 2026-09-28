@@ -17,6 +17,7 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/stats"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/systemhealth"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/ticket"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/waitlist"
 
@@ -102,8 +103,6 @@ func SetupRouter(
 		authService,
 	)
 
-	// Auth middleware now receives the repository so it can
-	// validate auth_version against the current DB value.
 	authMiddleware := auth.NewAuthMiddleware(
 		cfg,
 		authRepo,
@@ -125,6 +124,16 @@ func SetupRouter(
 
 	auditService := auditlog.NewService(
 		auditRepo,
+	)
+
+	auditHandler := auditlog.NewHandler(
+		auditService,
+	)
+
+	auditlog.RegisterRoutes(
+		api,
+		auditHandler,
+		authMiddleware,
 	)
 
 	// ==================================================
@@ -208,6 +217,12 @@ func SetupRouter(
 	)
 
 	waitlist.RegisterWaitlistRoutes(
+		api,
+		waitlistHandler,
+		authMiddleware,
+	)
+
+	waitlist.RegisterOwnerWaitlistRoutes(
 		api,
 		waitlistHandler,
 		authMiddleware,
@@ -334,7 +349,7 @@ func SetupRouter(
 	)
 
 	// ==================================================
-	// Admin (platform super-admin)
+	// Admin
 	// ==================================================
 
 	adminRepo := admin.NewRepository(
@@ -352,6 +367,26 @@ func SetupRouter(
 	admin.RegisterAdminRoutes(
 		api,
 		adminHandler,
+		authMiddleware,
+	)
+
+	// ==================================================
+	// System Health
+	// ==================================================
+
+	systemHealthService := systemhealth.NewService(
+		db,
+		redisClient,
+		cfg,
+	)
+
+	systemHealthHandler := systemhealth.NewHandler(
+		systemHealthService,
+	)
+
+	systemhealth.RegisterRoutes(
+		api,
+		systemHealthHandler,
 		authMiddleware,
 	)
 
@@ -385,7 +420,6 @@ func SetupRouter(
 			)
 			defer cancel()
 
-			// PostgreSQL
 			if err := db.Ping(ctx); err != nil {
 				c.JSON(
 					http.StatusServiceUnavailable,
@@ -398,7 +432,6 @@ func SetupRouter(
 				return
 			}
 
-			// Redis
 			if err := redisClient.Ping(ctx).Err(); err != nil {
 				c.JSON(
 					http.StatusServiceUnavailable,

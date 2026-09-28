@@ -14,7 +14,7 @@ import {
   MapPin,
 } from 'lucide-react';
 
-import { EventsAPI } from '../../lib/queries';
+import { EventsAPI, OrgsAPI } from '../../lib/queries';
 import { resolveMediaUrl } from '../../lib/api';
 import { Badge } from '../../components/ui/Badge';
 import { Skeleton } from '../../components/ui/Skeleton';
@@ -47,6 +47,18 @@ type OrganizationGroup = {
   events: EventItem[];
 };
 
+type EventWithOrganization = EventItem & {
+  organization_id?: number | string | null;
+  org_id?: number | string | null;
+  organizer_name?: string | null;
+  organization_name?: string | null;
+};
+
+type OrganizationItem = {
+  id: number | string;
+  name?: string | null;
+};
+
 export function EventsTable() {
   const [q, setQ] = useState('');
   const [status, setStatus] =
@@ -77,8 +89,8 @@ export function EventsTable() {
 
   const {
     data: events = [],
-    isLoading,
-    isError,
+    isLoading: eventsLoading,
+    isError: eventsError,
   } = useQuery<EventItem[]>({
     queryKey: ['events'],
     queryFn: () => EventsAPI.list(),
@@ -86,24 +98,123 @@ export function EventsTable() {
 
   /*
    * =========================================================
+   * FETCH ORGANIZATIONS
+   *
+   * Events may not always contain organizer_name.
+   * Therefore we fetch the organization list and resolve
+   * the actual organization name using organization_id.
+   * =========================================================
+   */
+
+  const {
+    data: organizationsData = [],
+    isLoading: organizationsLoading,
+  } = useQuery<OrganizationItem[]>({
+    queryKey: ['organizations'],
+    queryFn: () => OrgsAPI.list(),
+  });
+
+  /*
+   * =========================================================
+   * ORGANIZATION MAP
+   * =========================================================
+   */
+
+  const organizationMap = useMemo(() => {
+    const map = new Map<string, string>();
+
+    organizationsData.forEach((organization) => {
+      if (
+        organization?.id !== undefined &&
+        organization?.id !== null &&
+        organization?.name
+      ) {
+        map.set(
+          String(organization.id),
+          organization.name.trim(),
+        );
+      }
+    });
+
+    return map;
+  }, [organizationsData]);
+
+  /*
+   * =========================================================
    * HELPERS
    * =========================================================
    */
 
+  const getOrganizationId = (
+    event: EventItem,
+  ): string | null => {
+    const item =
+      event as EventWithOrganization;
+
+    const organizationId =
+      item.organization_id ??
+      item.org_id ??
+      null;
+
+    if (
+      organizationId === null ||
+      organizationId === undefined
+    ) {
+      return null;
+    }
+
+    return String(organizationId);
+  };
+
   const getOrganizationName = (
     event: EventItem,
   ): string => {
-    return (
-      event.organizer_name?.trim() ||
-      'Organization'
-    );
+    const item =
+      event as EventWithOrganization;
+
+    const organizationId =
+      getOrganizationId(event);
+
+    /*
+     * First priority:
+     * Actual organization fetched from API.
+     */
+    if (organizationId) {
+      const organizationName =
+        organizationMap.get(organizationId);
+
+      if (organizationName) {
+        return organizationName;
+      }
+    }
+
+    /*
+     * Second priority:
+     * Name already returned by event API.
+     */
+    const directName =
+      item.organization_name?.trim() ||
+      item.organizer_name?.trim();
+
+    if (directName) {
+      return directName;
+    }
+
+    /*
+     * Last fallback only when backend has not
+     * provided any organization information.
+     */
+    return 'Organization';
   };
 
   const getOrganizationKey = (
     event: EventItem,
   ): string => {
-    if (event.org_id !== null) {
-      return String(event.org_id);
+    const organizationId =
+      getOrganizationId(event);
+
+    if (organizationId) {
+      return organizationId;
     }
 
     return `organization-${getOrganizationName(
@@ -232,6 +343,24 @@ export function EventsTable() {
       );
     });
 
+    /*
+     * Also include organizations returned by the
+     * organizations API even if they currently have
+     * no event in the loaded event list.
+     */
+    organizationsData.forEach((item) => {
+      if (
+        item?.id !== undefined &&
+        item?.id !== null &&
+        item?.name
+      ) {
+        map.set(
+          String(item.id),
+          item.name.trim(),
+        );
+      }
+    });
+
     return [
       {
         key: 'all',
@@ -246,7 +375,7 @@ export function EventsTable() {
           name,
         })),
     ];
-  }, [events]);
+  }, [events, organizationsData]);
 
   /*
    * =========================================================
@@ -261,12 +390,17 @@ export function EventsTable() {
 
     if (search) {
       list = list.filter((event) => {
+        const item =
+          event as EventWithOrganization;
+
         const searchable = [
           event.title,
           event.venue,
           event.city,
           event.category,
-          event.organizer_name,
+          item.organization_name,
+          item.organizer_name,
+          getOrganizationName(event),
         ]
           .filter(Boolean)
           .join(' ')
@@ -345,6 +479,7 @@ export function EventsTable() {
     category,
     organization,
     sort,
+    organizationMap,
   ]);
 
   /*
@@ -383,7 +518,10 @@ export function EventsTable() {
       ).sort((a, b) =>
         a.name.localeCompare(b.name),
       );
-    }, [filteredEvents]);
+    }, [
+      filteredEvents,
+      organizationMap,
+    ]);
 
   /*
    * =========================================================
@@ -453,7 +591,7 @@ export function EventsTable() {
       revenue,
       organizationCount,
     };
-  }, [events]);
+  }, [events, organizationMap]);
 
   /*
    * =========================================================
@@ -507,11 +645,11 @@ export function EventsTable() {
     const registrationPercent =
       capacity > 0
         ? Math.min(
-            100,
-            (registered /
-              capacity) *
-              100,
-          )
+          100,
+          (registered /
+            capacity) *
+          100,
+        )
         : 0;
 
     return (
@@ -573,9 +711,9 @@ export function EventsTable() {
             <p className="mt-1 font-medium text-ink-800">
               {event.start_at
                 ? fmtDate(
-                    event.start_at,
-                    'MMM d, yyyy',
-                  )
+                  event.start_at,
+                  'MMM d, yyyy',
+                )
                 : '—'}
             </p>
 
@@ -588,11 +726,11 @@ export function EventsTable() {
 
             {timeState ===
               'upcoming' && (
-              <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600">
-                <Clock3 className="h-3 w-3" />
-                Upcoming
-              </span>
-            )}
+                <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600">
+                  <Clock3 className="h-3 w-3" />
+                  Upcoming
+                </span>
+              )}
 
             {timeState === 'past' && (
               <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-ink-400">
@@ -664,8 +802,8 @@ export function EventsTable() {
             <p className="text-[11px] text-ink-400">
               {price > 0
                 ? `₹${price.toLocaleString(
-                    'en-IN',
-                  )} / ticket`
+                  'en-IN',
+                )} / ticket`
                 : 'Free event'}
             </p>
           </div>
@@ -675,10 +813,10 @@ export function EventsTable() {
           <div>
             {event.status ===
               'published' && (
-              <Badge tone="green">
-                Published
-              </Badge>
-            )}
+                <Badge tone="green">
+                  Published
+                </Badge>
+              )}
 
             {event.status === 'draft' && (
               <Badge tone="gray">
@@ -688,17 +826,17 @@ export function EventsTable() {
 
             {event.status ===
               'cancelled' && (
-              <Badge tone="red">
-                Cancelled
-              </Badge>
-            )}
+                <Badge tone="red">
+                  Cancelled
+                </Badge>
+              )}
 
             {event.status ===
               'completed' && (
-              <Badge tone="blue">
-                Completed
-              </Badge>
-            )}
+                <Badge tone="blue">
+                  Completed
+                </Badge>
+              )}
           </div>
         </div>
       </div>
@@ -711,7 +849,10 @@ export function EventsTable() {
    * =========================================================
    */
 
-  if (isLoading) {
+  if (
+    eventsLoading ||
+    organizationsLoading
+  ) {
     return (
       <div className="space-y-5">
         <div>
@@ -766,7 +907,7 @@ export function EventsTable() {
    * =========================================================
    */
 
-  if (isError) {
+  if (eventsError) {
     return (
       <div className="space-y-5">
         <div>
@@ -1120,7 +1261,7 @@ export function EventsTable() {
             (group) => {
               const isExpanded =
                 expandedOrganizations[
-                  group.key
+                group.key
                 ] ?? true;
 
               const groupRegistrations =
@@ -1178,7 +1319,7 @@ export function EventsTable() {
                           <p className="mt-0.5 text-xs text-ink-500">
                             {group.events.length}{' '}
                             {group.events.length ===
-                            1
+                              1
                               ? 'event'
                               : 'events'}
                           </p>
@@ -1213,6 +1354,7 @@ export function EventsTable() {
                           )}
                         </p>
                       </div>
+
                     </div>
                   </button>
 

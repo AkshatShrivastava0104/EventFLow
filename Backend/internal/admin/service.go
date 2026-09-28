@@ -1,6 +1,9 @@
 package admin
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Service struct {
 	repo *Repository
@@ -95,5 +98,45 @@ func (s *Service) ListUsers(
 	return &PaginatedUsers{
 		Users:      users,
 		Pagination: buildPagination(page, limit, total),
+	}, nil
+}
+
+// ListRegistrations returns a platform-wide, read-only view of registrations.
+func (s *Service) ListRegistrations(
+	ctx context.Context,
+	search string,
+	eventID int64,
+	organizationID int64,
+	registrationStatus string,
+	paymentStatus string,
+	checkinStatus string,
+	from *time.Time,
+	to *time.Time,
+	sort string,
+	page, limit int,
+) (*PaginatedRegistrations, error) {
+	page, limit, offset := normalizePaging(page, limit)
+
+	registrations, total, err := s.repo.ListRegistrations(
+		ctx,
+		search,
+		eventID,
+		organizationID,
+		registrationStatus,
+		paymentStatus,
+		checkinStatus,
+		from,
+		to,
+		sort,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PaginatedRegistrations{
+		Registrations: registrations,
+		Pagination:    buildPagination(page, limit, total),
 	}, nil
 }

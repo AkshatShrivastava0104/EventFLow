@@ -17,8 +17,24 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
+// ============================================================
+// PLATFORM STATS
+// ============================================================
+
 // GET /stats/platform
+//
+// Supported query parameters:
+//
+//	?range=7d
+//	?range=15d
+//	?range=30d
+//	?range=90d
+//	?range=6m
+//	?range=12m
+//
+// Default: 30d
 func (h *Handler) GetPlatformStats(c *gin.Context) {
+
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -43,13 +59,28 @@ func (h *Handler) GetPlatformStats(c *gin.Context) {
 		}
 	}
 
+	analyticsRange := c.DefaultQuery(
+		"range",
+		string(Range30Days),
+	)
+
 	stats, err := h.service.GetPlatformStats(
 		c.Request.Context(),
 		userID,
 		platformRole,
+		analyticsRange,
 	)
 
 	if err != nil {
+
+		if err == ErrInvalidRange {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid analytics range",
+				"allowed": allowedAnalyticsRanges(),
+			})
+			return
+		}
+
 		if err == ErrForbidden {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "forbidden",
@@ -65,20 +96,28 @@ func (h *Handler) GetPlatformStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"stats": stats,
+		"range": analyticsRange,
 	})
 }
 
+// ============================================================
+// ORGANIZATION STATS
+// ============================================================
+
 // GET /organizations/:id/stats
 //
-// Supported query parameter:
+// Supported query parameters:
 //
 //	?range=7d
+//	?range=15d
 //	?range=30d
 //	?range=90d
+//	?range=6m
 //	?range=12m
 //
 // Default: 30d
 func (h *Handler) GetOrganizationStats(c *gin.Context) {
+
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -108,10 +147,6 @@ func (h *Handler) GetOrganizationStats(c *gin.Context) {
 		return
 	}
 
-	// Read the requested analytics period.
-	//
-	// Empty range is intentionally allowed because the service
-	// applies the default 30d range.
 	analyticsRange := c.DefaultQuery(
 		"range",
 		string(Range30Days),
@@ -125,6 +160,7 @@ func (h *Handler) GetOrganizationStats(c *gin.Context) {
 	)
 
 	if err != nil {
+
 		if err == ErrOrganizationID {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "organization id is required",
@@ -135,12 +171,7 @@ func (h *Handler) GetOrganizationStats(c *gin.Context) {
 		if err == ErrInvalidRange {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid analytics range",
-				"allowed": []string{
-					string(Range7Days),
-					string(Range30Days),
-					string(Range90Days),
-					string(Range12Months),
-				},
+				"allowed": allowedAnalyticsRanges(),
 			})
 			return
 		}
@@ -164,8 +195,13 @@ func (h *Handler) GetOrganizationStats(c *gin.Context) {
 	})
 }
 
+// ============================================================
+// STAFF STATS
+// ============================================================
+
 // GET /organizations/:id/operations/stats
 func (h *Handler) GetStaffStats(c *gin.Context) {
+
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -202,6 +238,7 @@ func (h *Handler) GetStaffStats(c *gin.Context) {
 	)
 
 	if err != nil {
+
 		if err == ErrOrganizationID {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "organization id is required",
@@ -225,4 +262,19 @@ func (h *Handler) GetStaffStats(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"stats": stats,
 	})
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+func allowedAnalyticsRanges() []string {
+	return []string{
+		string(Range7Days),
+		string(Range15Days),
+		string(Range30Days),
+		string(Range90Days),
+		string(Range6Months),
+		string(Range12Months),
+	}
 }

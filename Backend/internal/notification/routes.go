@@ -10,6 +10,8 @@ func RegisterNotificationRoutes(
 	notifications := api.Group("/notifications")
 	notifications.Use(authMiddleware)
 
+	// User + Platform Owner notifications.
+	// The authenticated user's own notifications are returned.
 	notifications.GET(
 		"",
 		handler.GetMyNotifications,

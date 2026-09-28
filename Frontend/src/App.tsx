@@ -38,9 +38,14 @@ import { Registrations } from './pages/owner/Registrations';
 import { Attendees } from './pages/owner/Attendees';
 import { WaitlistPage } from './pages/owner/Waitlist';
 import { TicketsAdmin } from './pages/owner/TicketsAdmin';
-import { OrganizationPage } from './pages/owner/Organization';
+import { PlatformTickets } from './pages/owner/PlatformTickets';
+import { Organizations } from './pages/owner/Organization';
+import { Users } from './pages/owner/Users';
 import { StaffPage } from './pages/owner/Staff';
 import { OwnerSettings } from './pages/owner/Settings';
+import ActivityLogs from './pages/owner/ActivityLogs';
+import SystemHealth from './pages/owner/SystemHealth';
+import { Notifications as OwnerNotifications } from './pages/owner/Notification';
 
 // Organization Admin
 import { AdminOverview } from './pages/admin/Overview';
@@ -266,26 +271,50 @@ export default function App() {
           element={<WaitlistPage />}
         />
 
+        {/* Platform-wide ticket monitoring only.
+            Owner does not have check-in functionality. */}
         <Route
-          path="tickets"
-          element={<TicketsAdmin />}
+          path="platform-tickets"
+          element={<PlatformTickets />}
         />
 
+        {/* Platform Organizations */}
         <Route
-          path="organization"
-          element={<OrganizationPage />}
+          path="organizations"
+          element={<Organizations />}
         />
 
+        {/* Platform Users */}
+        <Route
+          path="users"
+          element={<Users />}
+        />
+
+        {/* Platform Activity Logs */}
+        <Route
+          path="activity-logs"
+          element={<ActivityLogs />}
+        />
+
+        {/* System Health */}
+        <Route
+          path="system-health"
+          element={<SystemHealth />}
+        />
+
+        {/* Owner Staff Management */}
         <Route
           path="staff"
           element={<StaffPage />}
         />
 
+        {/* Owner Platform Notifications */}
         <Route
           path="notifications"
-          element={<Notifications />}
+          element={<OwnerNotifications />}
         />
 
+        {/* Owner Settings */}
         <Route
           path="settings"
           element={<OwnerSettings />}
@@ -305,73 +334,61 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        {/* /admin */}
         <Route
           index
           element={<AdminOverview />}
         />
 
-        {/* /admin/events */}
         <Route
           path="events"
           element={<EventsTable />}
         />
 
-        {/* /admin/events/new */}
         <Route
           path="events/new"
           element={<EventEditor />}
         />
 
-        {/* /admin/events/:id/edit */}
         <Route
           path="events/:id/edit"
           element={<EventEditor />}
         />
 
-        {/* /admin/analytics */}
         <Route
           path="analytics"
           element={<AdminAnalytics />}
         />
 
-        {/* /admin/registrations */}
         <Route
           path="registrations"
           element={<Registrations />}
         />
 
-        {/* /admin/attendees */}
         <Route
           path="attendees"
           element={<Attendees />}
         />
 
-        {/* /admin/tickets */}
         <Route
           path="tickets"
           element={<TicketsAdmin />}
         />
 
-        {/* /admin/organization */}
         <Route
           path="organization"
-          element={<OrganizationPage />}
+          element={<Organizations />}
         />
 
-        {/* /admin/members */}
         <Route
           path="members"
           element={<StaffPage />}
         />
 
-        {/* /admin/notifications */}
         <Route
           path="notifications"
           element={<Notifications />}
         />
 
-        {/* /admin/settings */}
         <Route
           path="settings"
           element={<Profile />}
@@ -391,43 +408,36 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        {/* /staff */}
         <Route
           index
           element={<StaffOverview />}
         />
 
-        {/* /staff/events */}
         <Route
           path="events"
           element={<StaffEvents />}
         />
 
-        {/* /staff/scanner */}
         <Route
           path="scanner"
           element={<ScannerPage />}
         />
 
-        {/* /staff/tickets */}
         <Route
           path="tickets"
           element={<StaffTickets />}
         />
 
-        {/* /staff/attendees */}
         <Route
           path="attendees"
           element={<StaffAttendees />}
         />
 
-        {/* /staff/notifications */}
         <Route
           path="notifications"
           element={<Notifications />}
         />
 
-        {/* /staff/settings */}
         <Route
           path="settings"
           element={<Profile />}

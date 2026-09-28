@@ -15,7 +15,7 @@ Frontend/node_modules/
 Frontend/dist/
 Frontend/build/
 
-# IDE
+# IDE 
 .vscode/
 .idea/
 

@@ -15,9 +15,11 @@ var (
 type AnalyticsRange string
 
 const (
-	Range7Days   AnalyticsRange = "7d"
-	Range30Days  AnalyticsRange = "30d"
-	Range90Days  AnalyticsRange = "90d"
+	Range7Days    AnalyticsRange = "7d"
+	Range15Days   AnalyticsRange = "15d"
+	Range30Days   AnalyticsRange = "30d"
+	Range90Days   AnalyticsRange = "90d"
+	Range6Months  AnalyticsRange = "6m"
 	Range12Months AnalyticsRange = "12m"
 )
 
@@ -45,18 +47,38 @@ func NewService(
 }
 
 // GetPlatformStats returns platform-wide statistics.
+//
 // Only PLATFORM_OWNER can access this endpoint.
+//
+// analyticsRange controls the reporting period:
+//   - 7d  = last 7 days
+//   - 15d = last 15 days
+//   - 30d = last 30 days
+//   - 90d = last 90 days
+//   - 6m  = last 6 months
+//   - 12m = last 12 months
 func (s *Service) GetPlatformStats(
 	ctx context.Context,
 	userID int64,
 	platformRole string,
+	analyticsRange string,
 ) (*PlatformStats, error) {
 
 	if !isPlatformOwner(platformRole) {
 		return nil, ErrForbidden
 	}
 
-	return s.repo.GetPlatformStats(ctx)
+	normalizedRange, err := normalizeAnalyticsRange(
+		analyticsRange,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetPlatformStats(
+		ctx,
+		string(normalizedRange),
+	)
 }
 
 // GetOrganizationStats returns organization-level statistics.
@@ -66,8 +88,10 @@ func (s *Service) GetPlatformStats(
 //
 // The range controls the analytics period:
 //   - 7d  = last 7 days
+//   - 15d = last 15 days
 //   - 30d = last 30 days
 //   - 90d = last 90 days
+//   - 6m  = last 6 months
 //   - 12m = last 12 months
 func (s *Service) GetOrganizationStats(
 	ctx context.Context,
@@ -89,7 +113,9 @@ func (s *Service) GetOrganizationStats(
 		return nil, ErrForbidden
 	}
 
-	role = strings.ToUpper(strings.TrimSpace(role))
+	role = strings.ToUpper(
+		strings.TrimSpace(role),
+	)
 
 	if role != "ADMIN" && role != "STAFF" {
 		return nil, ErrForbidden
@@ -109,8 +135,11 @@ func (s *Service) GetOrganizationStats(
 	)
 }
 
-// GetStaffStats returns operational statistics for staff/admin.
-// The organization membership is verified before querying data.
+// GetStaffStats returns operational statistics for
+// staff/admin.
+//
+// The organization membership is verified before
+// querying data.
 func (s *Service) GetStaffStats(
 	ctx context.Context,
 	organizationID int64,
@@ -130,7 +159,9 @@ func (s *Service) GetStaffStats(
 		return nil, ErrForbidden
 	}
 
-	role = strings.ToUpper(strings.TrimSpace(role))
+	role = strings.ToUpper(
+		strings.TrimSpace(role),
+	)
 
 	if role != "ADMIN" && role != "STAFF" {
 		return nil, ErrForbidden
@@ -142,6 +173,10 @@ func (s *Service) GetStaffStats(
 	)
 }
 
+// normalizeAnalyticsRange validates and normalizes
+// the analytics range.
+//
+// Empty value defaults to 30 days.
 func normalizeAnalyticsRange(
 	value string,
 ) (AnalyticsRange, error) {
@@ -150,20 +185,26 @@ func normalizeAnalyticsRange(
 		strings.TrimSpace(value),
 	)
 
-	// Default analytics range.
 	if value == "" {
 		return Range30Days, nil
 	}
 
 	switch AnalyticsRange(value) {
+
 	case Range7Days:
 		return Range7Days, nil
+
+	case Range15Days:
+		return Range15Days, nil
 
 	case Range30Days:
 		return Range30Days, nil
 
 	case Range90Days:
 		return Range90Days, nil
+
+	case Range6Months:
+		return Range6Months, nil
 
 	case Range12Months:
 		return Range12Months, nil
@@ -174,7 +215,9 @@ func normalizeAnalyticsRange(
 }
 
 func isPlatformOwner(role string) bool {
-	role = strings.ToLower(strings.TrimSpace(role))
+	role = strings.ToLower(
+		strings.TrimSpace(role),
+	)
 
 	return role == "platform_owner" ||
 		role == "owner"
