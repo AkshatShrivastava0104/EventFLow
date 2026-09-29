@@ -68,9 +68,6 @@ func (r *Repository) CheckIn(
 	return 0, errors.New("check-in failed after retries")
 }
 
-
-
-
 func (r *Repository) checkInOnce(
 	ctx context.Context,
 	eventID int64,
@@ -109,6 +106,7 @@ func (r *Repository) checkInOnce(
 			ON r.id = t.registration_id
 		WHERE t.ticket_number = $1
 		  AND r.event_id = $2
+		  AND r.status != 'cancelled'
 	`,
 		ticketNumber,
 		eventID,
@@ -169,9 +167,6 @@ func (r *Repository) checkInOnce(
 	return checkinID, nil
 }
 
-
-
-
 func isUniqueViolation(err error) bool {
 
 	var pgErr *pgconn.PgError
@@ -182,8 +177,6 @@ func isUniqueViolation(err error) bool {
 
 	return false
 }
-
-
 
 func isRetryableCheckInError(err error) bool {
 

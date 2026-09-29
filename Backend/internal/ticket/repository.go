@@ -3,6 +3,7 @@ package ticket
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -273,6 +274,9 @@ func (r *Repository) GetMyTickets(
 
 		t.CheckedIn = t.CheckedInAt != nil
 
+		// Generate the actual QR image URL from the stored QR payload.
+		t.QRCodeURL = generateQRCodeURL(t.QRCode)
+
 		tickets = append(tickets, t)
 	}
 
@@ -378,7 +382,22 @@ func (r *Repository) GetTicketByID(
 
 	ticket.CheckedIn = ticket.CheckedInAt != nil
 
+	// Generate the actual QR image URL from the stored QR payload.
+	ticket.QRCodeURL = generateQRCodeURL(ticket.QRCode)
+
 	return &ticket, nil
+}
+
+// generateQRCodeURL converts the EventFlow QR payload into
+// a QuickChart QR image URL.
+//
+// The QR payload itself remains stored in the database.
+// QuickChart is only responsible for rendering that payload
+// as an actual QR image.
+func generateQRCodeURL(qrCode string) string {
+	return "https://quickchart.io/qr?text=" +
+		url.QueryEscape(qrCode) +
+		"&size=500&format=png"
 }
 
 func isUniqueViolation(err error) bool {

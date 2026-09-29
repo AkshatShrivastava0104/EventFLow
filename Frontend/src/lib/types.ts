@@ -90,6 +90,7 @@ export interface Ticket {
 
   // Existing frontend-compatible field.
   ticket_code?: string;
+  qr_code_url?: string;
 
   attendee_name?: string;
   attendee_email?: string;

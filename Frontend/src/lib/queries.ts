@@ -189,6 +189,11 @@ function normalizeTicket(ticket: any): Ticket {
       ticket?.qrCode ??
       '',
 
+    qr_code_url:
+      ticket?.qr_code_url ??
+      ticket?.qrCodeUrl ??
+      '',
+
     checked_in:
       Boolean(
         ticket?.checked_in ??

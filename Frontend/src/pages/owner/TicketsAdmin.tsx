@@ -282,7 +282,7 @@ function getStatusTone(
   }
 }
 
-export function TicketsAdmin() {
+export function TicketsOwner() {
   const [search, setSearch] =
     useState('');
 

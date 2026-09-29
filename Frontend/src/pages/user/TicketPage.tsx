@@ -58,6 +58,10 @@ export function TicketPage() {
     ticketData.ticket_number ||
     '';
 
+  const qrCodeUrl =
+    ticketData.qr_code_url ||
+    '';
+
   const eventTitle =
     ticketData.event_title ||
     'Event';
@@ -157,17 +161,6 @@ export function TicketPage() {
   const endDate = formatEventDate(eventEnd);
   const endTime = formatEventTime(eventEnd);
 
-  /*
-   * Display:
-   *
-   * Same day:
-   * Wed, Sep 30, 2026
-   * 1:49 AM – 7:19 AM
-   *
-   * Different days:
-   * Wed, Sep 30, 2026
-   * 1:49 AM – Thu, Oct 1, 2026 7:19 AM
-   */
   const isSameDate =
     startDate &&
     endDate &&
@@ -244,9 +237,7 @@ export function TicketPage() {
                 }
                 label="Where"
                 value={eventVenue}
-                sub={
-                  location || undefined
-                }
+                sub={location || undefined}
               />
             </div>
 
@@ -273,6 +264,7 @@ export function TicketPage() {
               <>
                 <QRCode
                   value={ticketCode}
+                  qrCodeUrl={qrCodeUrl}
                   size={180}
                 />
 

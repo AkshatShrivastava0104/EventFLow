@@ -16,6 +16,7 @@ type MyTicket struct {
 	ID                 int64     `json:"id"`
 	RegistrationID     int64     `json:"registration_id"`
 	QRCode             string    `json:"qr_code"`
+	QRCodeURL          string    `json:"qr_code_url"`
 	TicketNumber       string    `json:"ticket_number"`
 	RegistrationStatus string    `json:"registration_status"`
 	CreatedAt          time.Time `json:"created_at"`

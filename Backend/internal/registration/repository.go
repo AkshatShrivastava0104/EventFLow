@@ -382,10 +382,9 @@ func (r *Repository) RegisterUser(
 		return nil, err
 	}
 
-	qrCode, err := generateQRCode(registrationID)
-	if err != nil {
-		return nil, err
-	}
+	// The QR payload uses the same unique ticket number
+	// that the existing check-in system already validates.
+	qrCode := generateQRCode(ticketNumber)
 
 	var ticketID int64
 
@@ -849,6 +848,10 @@ func (r *Repository) GetEventRegistrations(
 	return attendees, total, nil
 }
 
+// generateTicketNumber creates a unique public ticket identifier.
+//
+// This value is already UNIQUE in the tickets table and is also
+// what the existing check-in system uses to locate the ticket.
 func generateTicketNumber() (string, error) {
 	b := make([]byte, 8)
 
@@ -863,18 +866,16 @@ func generateTicketNumber() (string, error) {
 	), nil
 }
 
-func generateQRCode(registrationID int64) (string, error) {
-	b := make([]byte, 16)
-
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-
+// generateQRCode creates the payload that will be encoded
+// into the actual QR image.
+//
+// The existing check-in system validates ticket_number,
+// therefore the QR contains the same ticket number.
+func generateQRCode(ticketNumber string) string {
 	return fmt.Sprintf(
-		"eventflow:ticket:%d:%s",
-		registrationID,
-		hex.EncodeToString(b),
-	), nil
+		"eventflow:ticket:%s",
+		ticketNumber,
+	)
 }
 
 func isUniqueViolation(err error) bool {

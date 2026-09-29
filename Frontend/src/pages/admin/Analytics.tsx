@@ -36,9 +36,6 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { fmtDate } from '../../lib/utils';
 
 export function Analytics() {
-    const [selectedOrganizationId, setSelectedOrganizationId] =
-        useState<string>('');
-
     const [selectedRange, setSelectedRange] =
         useState<AnalyticsRange>('30d');
 
@@ -70,19 +67,11 @@ export function Analytics() {
     /*
      * Select the first organization automatically.
      */
-    const activeOrganizationId =
-        selectedOrganizationId ||
-        (organizations.length > 0
-            ? String(organizations[0].id)
-            : '');
+    const activeOrganization = organizations[0];
 
-    const activeOrganization = useMemo(() => {
-        return organizations.find(
-            (organization: any) =>
-                String(organization.id) ===
-                String(activeOrganizationId)
-        );
-    }, [organizations, activeOrganizationId]);
+    const activeOrganizationId = activeOrganization?.id
+        ? String(activeOrganization.id)
+        : '';
 
     /*
      * ----------------------------------------------------------
@@ -116,7 +105,7 @@ export function Analytics() {
      * ----------------------------------------------------------
      */
     const normalizedStats = useMemo(() => {
-        const value: any = stats ?? {};
+        const value: any = stats?.stats ?? stats ?? {};
 
         return {
             organizationName:
@@ -490,29 +479,6 @@ export function Analytics() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {organizations.length > 1 && (
-                        <select
-                            value={activeOrganizationId}
-                            onChange={(event) =>
-                                setSelectedOrganizationId(
-                                    event.target.value
-                                )
-                            }
-                            className="h-10 min-w-[220px] rounded-xl border border-ink-200 bg-white px-3 text-sm font-medium text-ink-700 outline-none transition-colors focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
-                        >
-                            {organizations.map(
-                                (organization: any) => (
-                                    <option
-                                        key={organization.id}
-                                        value={organization.id}
-                                    >
-                                        {organization.name}
-                                    </option>
-                                )
-                            )}
-                        </select>
-                    )}
-
                     <div className="flex items-center rounded-xl border border-ink-200 bg-white p-1">
                         {(
                             [
@@ -529,8 +495,8 @@ export function Analytics() {
                                     setSelectedRange(range)
                                 }
                                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${selectedRange === range
-                                        ? 'bg-ink-900 text-white'
-                                        : 'text-ink-500 hover:bg-ink-50 hover:text-ink-900'
+                                    ? 'bg-ink-900 text-white'
+                                    : 'text-ink-500 hover:bg-ink-50 hover:text-ink-900'
                                     }`}
                             >
                                 {label}

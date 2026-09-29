@@ -16,18 +16,12 @@ import {
 import {
   Menu,
   X,
-  Bell,
-  Search,
   LogOut,
   Ticket as TicketIcon,
   ChevronDown,
 } from 'lucide-react';
 
 import { useAuth } from '../../contexts/AuthContext';
-
-import { useQuery } from '@tanstack/react-query';
-
-import { NotificationsAPI } from '../../lib/queries';
 
 export interface NavGroup {
   label: string;
@@ -89,19 +83,6 @@ export function DashboardLayout({
     brandLabel.toLowerCase() ===
     'organization admin';
 
-  const { data: notifs } = useQuery({
-    queryKey: ['notifications', user?.id],
-    queryFn: () =>
-      NotificationsAPI.list({
-        user_id: user!.id,
-      }),
-    enabled: !!user,
-  });
-
-  const unread = (notifs || []).filter(
-    (notification) => !notification.read,
-  ).length;
-
   const pageTitle = (() => {
     const flat = groups.flatMap(
       (group) => group.items,
@@ -128,7 +109,7 @@ export function DashboardLayout({
     'U';
 
   return (
-    <div className="flex min-h-screen bg-ink-50">
+    <div className="min-h-screen bg-ink-50">
       {/* =====================================================
           Sidebar Overlay - Mobile
       ===================================================== */}
@@ -150,7 +131,7 @@ export function DashboardLayout({
       ===================================================== */}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-ink-950 text-ink-100 transition-transform lg:relative lg:translate-x-0 ${open
+        className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-ink-950 text-ink-100 transition-transform lg:translate-x-0 ${open
             ? 'translate-x-0'
             : '-translate-x-full lg:translate-x-0'
           }`}
@@ -268,7 +249,7 @@ export function DashboardLayout({
           Main
       ===================================================== */}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-screen min-w-0 flex-col lg:ml-72">
         {/* Header */}
 
         <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-ink-200 bg-white px-4 sm:px-6">
@@ -296,32 +277,6 @@ export function DashboardLayout({
           {/* Header actions */}
 
           <div className="ml-auto flex items-center gap-2">
-            {/* Search */}
-
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-ink-400" />
-
-              <input
-                placeholder="Search"
-                className="h-9 w-56 rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-brand-500"
-              />
-            </div>
-
-            {/* Notifications */}
-
-            <Link
-              to="/notifications"
-              className="relative rounded-lg p-2 text-ink-600 hover:bg-ink-100"
-            >
-              <Bell className="h-5 w-5" />
-
-              {unread > 0 && (
-                <span className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-bold text-white">
-                  {unread}
-                </span>
-              )}
-            </Link>
-
             {/* =================================================
                 User menu
             ================================================= */}

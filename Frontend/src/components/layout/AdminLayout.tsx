@@ -105,7 +105,7 @@ export function AdminLayout() {
                 },
                 {
                     to: '/admin/settings',
-                    label: 'Profile',
+                    label: 'Profile & Settings',
                     icon: (
                         <Settings className="h-4 w-4" />
                     ),

@@ -444,6 +444,10 @@ export function RegistrationSuccess() {
     ticket?.ticket_number ??
     '';
 
+  const qrCodeUrl =
+    ticket?.qr_code_url ??
+    '';
+
   const currency =
     eventData.currency ||
     'INR';
@@ -544,10 +548,10 @@ export function RegistrationSuccess() {
       >
         <div
           className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${isCancelled
-              ? 'bg-red-100 text-red-600'
-              : isWaitlist
-                ? 'bg-orange-100 text-orange-600'
-                : 'bg-brand-100 text-brand-600'
+            ? 'bg-red-100 text-red-600'
+            : isWaitlist
+              ? 'bg-orange-100 text-orange-600'
+              : 'bg-brand-100 text-brand-600'
             }`}
         >
           {isCancelled ? (
@@ -582,10 +586,10 @@ export function RegistrationSuccess() {
           <div className="flex flex-wrap items-center gap-2">
             <span
               className={`rounded-full px-3 py-1 text-xs font-semibold ${isCancelled
-                  ? 'bg-red-500/20 text-red-300'
-                  : isWaitlist
-                    ? 'bg-orange-500/20 text-orange-300'
-                    : 'bg-brand-500/20 text-brand-300'
+                ? 'bg-red-500/20 text-red-300'
+                : isWaitlist
+                  ? 'bg-orange-500/20 text-orange-300'
+                  : 'bg-brand-500/20 text-brand-300'
                 }`}
             >
               {isCancelled
@@ -736,6 +740,7 @@ export function RegistrationSuccess() {
                           qrValue ||
                           ticketNumber
                         }
+                        qrCodeUrl={qrCodeUrl}
                         size={180}
                       />
                     </div>

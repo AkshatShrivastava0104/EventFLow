@@ -672,6 +672,28 @@ func (r *Repository) GetAllEvents(
 	}
 
 	/*
+		Public browse lifecycle:
+
+		- Published events remain visible on their event day.
+		- Once the event ended before today, it is hidden from
+		  the public published-event listing.
+		- Admin/owner requests using status=all or status=completed
+		  are not affected.
+
+		CURRENT_DATE is intentional: an event remains visible for
+		its complete calendar day and disappears the next day.
+	*/
+	if status == "published" {
+		conditions = append(
+			conditions,
+			`(
+				end_time IS NULL
+				OR end_time >= CURRENT_DATE
+			)`,
+		)
+	}
+
+	/*
 		Search across the most useful event fields.
 
 		Title

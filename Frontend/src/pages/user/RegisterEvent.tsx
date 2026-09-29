@@ -13,12 +13,14 @@ import {
   User as UserIcon,
   Mail,
   Phone,
+  Ticket as TicketIcon,
   ShieldCheck,
 } from 'lucide-react';
 import {
   EventsAPI,
   RegistrationsAPI,
 } from '../../lib/queries';
+import { resolveMediaUrl } from '../../lib/api';
 import { useAuth } from '../../contexts/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
@@ -43,7 +45,6 @@ export function RegisterEvent() {
 
   const {
     data: event,
-    isLoading,
   } = useQuery({
     queryKey: ['event', id],
     queryFn: () => EventsAPI.get(id!),
@@ -53,6 +54,9 @@ export function RegisterEvent() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [qty, setQty] = useState(1);
+  const [ticketType, setTicketType] =
+    useState('General');
 
   useEffect(() => {
     if (user) {
@@ -65,74 +69,56 @@ export function RegisterEvent() {
     !event ||
     Number(event.price || 0) === 0;
 
-  const register = useMutation({
-    mutationFn: () =>
-      RegistrationsAPI.create({
-        event_id: event!.id,
-        user_id: user?.id != null ? String(user.id) : undefined,
-        user_name: name,
-        user_email: email,
-        user_phone: phone,
+  const totalAmount = isFree
+    ? 0
+    : Number(event!.price) * qty;
 
-        /*
-         * The backend currently treats a normal free RSVP
-         * as one registration and immediately creates its
-         * ticket.
-         */
-        ticket_type: 'General',
-        quantity: 1,
-        total_amount: 0,
-        payment_status: 'free',
-      }),
+  const register = useMutation({
+    mutationFn: (payload: any) =>
+      RegistrationsAPI.create(payload),
 
     onSuccess: (response: any) => {
       /*
-       * Normal free registration response:
+       * Backend response can be one of these shapes:
        *
        * {
-       *   message: "registration created successfully",
+       *   registration: {
+       *     id: 123
+       *   }
+       * }
+       *
+       * OR
+       *
+       * {
        *   registration_id: 123
        * }
        *
-       * Waitlist response:
+       * OR directly:
        *
        * {
-       *   message: "...",
-       *   waitlist_id: 123
+       *   id: 123
        * }
+       *
+       * Handle all of them so the frontend
+       * never crashes on registration.id.
        */
 
+      const registration =
+        response?.registration ??
+        response?.data?.registration ??
+        response;
+
       const registrationId =
+        registration?.id ??
         response?.registration_id ??
-        response?.registration?.id ??
         response?.data?.registration_id ??
-        response?.data?.registration?.id;
-
-      const waitlistId =
-        response?.waitlist_id ??
-        response?.waitlist?.id ??
-        response?.data?.waitlist_id ??
-        response?.data?.waitlist?.id;
-
-      if (isWaitlist) {
-        toast.success(
-          'You have joined the waitlist!',
-        );
-
-        if (waitlistId) {
-          nav(
-            `/registrations/${waitlistId}/success`,
-          );
-        } else {
-          nav('/registrations');
-        }
-
-        return;
-      }
+        registration?.registration_id;
 
       if (registrationId) {
         toast.success(
-          'Registration successful! Your ticket is ready.',
+          isWaitlist
+            ? 'You have joined the waitlist!'
+            : 'Registration successful!',
         );
 
         nav(
@@ -142,8 +128,17 @@ export function RegisterEvent() {
         return;
       }
 
+      /*
+       * Registration succeeded but backend did not
+       * return an ID.
+       *
+       * Do not crash the UI. Send the user to
+       * their registrations page instead.
+       */
       toast.success(
-        'Registration successful! Your ticket is ready.',
+        isWaitlist
+          ? 'You have joined the waitlist!'
+          : 'Registration successful!',
       );
 
       nav('/registrations');
@@ -162,33 +157,6 @@ export function RegisterEvent() {
           backendMessage ||
           'You are already registered for this event.',
         );
-
-        return;
-      }
-
-      if (
-        error?.response?.status === 400
-      ) {
-        toast.error(
-          backendMessage ||
-          'Registration is not available for this event.',
-        );
-
-        return;
-      }
-
-      if (
-        error?.response?.status === 401
-      ) {
-        toast.error(
-          'Please sign in to register.',
-        );
-
-        nav('/login', {
-          state: {
-            from: `/events/${id}/register`,
-          },
-        });
 
         return;
       }
@@ -223,21 +191,41 @@ export function RegisterEvent() {
       return;
     }
 
-    /*
-     * Payment is intentionally not wired yet.
-     *
-     * Free RSVP:
-     * Register immediately -> backend creates
-     * registration + ticket atomically.
-     *
-     * Paid events:
-     * Keep existing checkout flow for now.
-     */
     if (isFree || isWaitlist) {
-      register.mutate();
+      register.mutate({
+        event_id: event.id,
+
+        /*
+         * Keep user_id for compatibility with the
+         * existing backend. The backend should still
+         * trust the authenticated JWT user_id rather
+         * than this client-provided value.
+         */
+        user_id: user.id,
+
+        user_name: name,
+        user_email: email,
+        user_phone: phone,
+
+        ticket_type: ticketType,
+        quantity: qty,
+
+        total_amount: 0,
+        payment_status: 'free',
+
+        status: isWaitlist
+          ? 'waitlist'
+          : undefined,
+      });
+
       return;
     }
 
+    /*
+     * Paid event:
+     * Persist checkout state and move to
+     * payment page.
+     */
     sessionStorage.setItem(
       'ef.checkout',
       JSON.stringify({
@@ -245,9 +233,9 @@ export function RegisterEvent() {
         name,
         email,
         phone,
-        qty: 1,
-        ticket_type: 'General',
-        total: Number(event.price),
+        qty,
+        ticket_type: ticketType,
+        total: totalAmount,
       }),
     );
 
@@ -256,7 +244,7 @@ export function RegisterEvent() {
     );
   };
 
-  if (isLoading || !event) {
+  if (!event) {
     return (
       <div className="p-10 text-center text-ink-500">
         Loading event…
@@ -335,27 +323,99 @@ export function RegisterEvent() {
 
           <div className="rounded-2xl border border-ink-200 bg-white p-6">
             <h2 className="font-display text-xl font-semibold">
-              Registration
+              Ticket selection
             </h2>
 
-            <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-4">
-              <p className="font-semibold text-brand-900">
-                General admission
-              </p>
+            <div className="mt-4 space-y-3">
+              {['General', 'VIP'].map(
+                (tt) => (
+                  <label
+                    key={tt}
+                    className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 ${ticketType === tt
+                      ? 'border-brand-500 bg-brand-50'
+                      : 'border-ink-200'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="ticket"
+                        checked={
+                          ticketType === tt
+                        }
+                        onChange={() =>
+                          setTicketType(tt)
+                        }
+                        className="accent-brand-500"
+                      />
 
-              <p className="mt-1 text-sm text-brand-700">
-                {isWaitlist
-                  ? 'You will be added to the event waitlist.'
-                  : 'One registration includes one digital ticket.'}
-              </p>
+                      <div>
+                        <p className="font-semibold">
+                          {tt} ticket
+                        </p>
 
-              <p className="mt-2 text-sm font-semibold text-brand-900">
-                {isFree
-                  ? 'Free'
-                  : fmtMoney(
-                    Number(event.price),
-                    event.currency || 'INR',
-                  )}
+                        <p className="text-xs text-ink-500">
+                          {tt === 'VIP'
+                            ? 'Front row + backstage lounge'
+                            : 'Standard admission'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="font-display text-lg font-semibold">
+                      {isFree
+                        ? 'Free'
+                        : fmtMoney(
+                          tt === 'VIP'
+                            ? Number(event.price) *
+                            2
+                            : Number(event.price),
+                          (event as any)
+                            .currency || 'INR',
+                        )}
+                    </p>
+                  </label>
+                ),
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center gap-3">
+              <label className="text-sm font-semibold">
+                Quantity
+              </label>
+
+              <div className="inline-flex items-center rounded-lg border border-ink-200">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQty((q) =>
+                      Math.max(1, q - 1),
+                    )
+                  }
+                  className="h-9 w-9 text-lg"
+                >
+                  –
+                </button>
+
+                <span className="w-10 text-center text-sm font-semibold">
+                  {qty}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setQty((q) =>
+                      Math.min(10, q + 1),
+                    )
+                  }
+                  className="h-9 w-9 text-lg"
+                >
+                  +
+                </button>
+              </div>
+
+              <p className="text-xs text-ink-500">
+                Max 10 per order
               </p>
             </div>
           </div>
@@ -392,7 +452,7 @@ export function RegisterEvent() {
               {isWaitlist
                 ? 'Join waitlist'
                 : isFree
-                  ? 'RSVP now'
+                  ? 'Reserve free spot'
                   : 'Continue to payment'}
             </Button>
           </div>
@@ -400,6 +460,9 @@ export function RegisterEvent() {
 
         <OrderSummary
           event={event}
+          qty={qty}
+          ticketType={ticketType}
+          total={totalAmount}
           isFree={isFree || isWaitlist}
         />
       </div>
@@ -466,29 +529,42 @@ export function Stepper({
 
 export function OrderSummary({
   event,
+  qty,
+  ticketType,
+  total,
   isFree,
-}: {
-  event: any;
-  isFree: boolean;
-}) {
-  const price = Number(
-    event?.price || 0,
-  );
+}: any) {
+  const feeRate = 0.03;
+  const fees = isFree
+    ? 0
+    : total * feeRate;
+
+  const grand = total + fees;
 
   const currency =
     event?.currency || 'INR';
 
+  const mediaUrl = resolveMediaUrl(
+    event?.cover_image ||
+    event?.cover_media_url ||
+    '',
+  );
+
   return (
     <aside className="h-fit rounded-2xl border border-ink-200 bg-white p-5 lg:sticky lg:top-20">
-      {event?.cover_image ? (
-        <img
-          src={event.cover_image}
-          alt={event.title}
-          className="aspect-video w-full rounded-xl object-cover"
-        />
-      ) : (
-        <div className="aspect-video rounded-xl bg-gradient-to-br from-brand-500 to-sky-500" />
-      )}
+      <div className="relative aspect-video overflow-hidden rounded-xl bg-gradient-to-br from-brand-500 to-sky-500">
+        {mediaUrl ? (
+          <img
+            src={mediaUrl}
+            alt={event?.title || 'Event cover'}
+            className="h-full w-full object-cover"
+            loading="eager"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : null}
+      </div>
 
       <h3 className="font-display mt-3 text-lg font-semibold">
         {event.title}
@@ -501,16 +577,26 @@ export function OrderSummary({
 
       <div className="mt-4 space-y-2 border-t border-ink-100 pt-4 text-sm">
         <Row
-          label="General admission"
+          label={`${ticketType} × ${qty}`}
           value={
             isFree
               ? 'Free'
               : fmtMoney(
-                price,
+                total,
                 currency,
               )
           }
         />
+
+        {!isFree && (
+          <Row
+            label="Service fee (3%)"
+            value={fmtMoney(
+              fees,
+              currency,
+            )}
+          />
+        )}
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-4">
@@ -522,7 +608,7 @@ export function OrderSummary({
           {isFree
             ? 'Free'
             : fmtMoney(
-              price,
+              grand,
               currency,
             )}
         </p>
@@ -531,8 +617,8 @@ export function OrderSummary({
       <div className="mt-3 flex items-center gap-2 rounded-lg bg-ink-50 p-2.5 text-xs text-ink-600">
         <ShieldCheck className="h-4 w-4 text-brand-600" />
 
-        Secure registration. Your digital
-        ticket is generated immediately.
+        100% secure payments • Refundable
+        up to 24h
       </div>
     </aside>
   );
@@ -558,6 +644,8 @@ function Row({
   );
 }
 
+// Also export a small link used in
+// the empty checkout page
 export function BackToEvent({
   id,
 }: {

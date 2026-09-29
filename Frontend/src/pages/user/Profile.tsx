@@ -12,7 +12,6 @@ import {
   Shield,
   LogOut,
   LayoutDashboard,
-  ScanLine,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -116,8 +115,8 @@ export function Profile() {
               key={t.id}
               onClick={() => setTab(t.id as typeof tab)}
               className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium ${tab === t.id
-                  ? 'bg-ink-900 text-white'
-                  : 'text-ink-700 hover:bg-ink-100'
+                ? 'bg-ink-900 text-white'
+                : 'text-ink-700 hover:bg-ink-100'
                 }`}
             >
               {t.icon}
@@ -341,19 +340,6 @@ export function Profile() {
                       }
                     >
                       Owner dashboard
-                    </Button>
-                  </Link>
-                )}
-
-                {(role === 'staff' || role === 'admin') && (
-                  <Link to="/staff">
-                    <Button
-                      variant="outline"
-                      leftIcon={
-                        <ScanLine className="h-4 w-4" />
-                      }
-                    >
-                      Staff console
                     </Button>
                   </Link>
                 )}

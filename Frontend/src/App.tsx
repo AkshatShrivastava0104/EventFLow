@@ -34,18 +34,25 @@ import { Analytics as OwnerAnalytics } from './pages/owner/Analytics';
 import { Analytics as AdminAnalytics } from './pages/admin/Analytics';
 import { EventsTable } from './pages/owner/EventsTable';
 import { EventEditor } from './pages/owner/EventEditor';
+import { EventsAdmin } from './pages/admin/Events';
+import { EventDetailsAdmin } from './pages/admin/EventDetails';
 import { Registrations } from './pages/owner/Registrations';
+import { Registrations as RegistrationsAdmin } from './pages/admin/Registrations';
 import { Attendees } from './pages/owner/Attendees';
+import AttendeesAdmin from './pages/admin/Attendees';
 import { WaitlistPage } from './pages/owner/Waitlist';
-import { TicketsAdmin } from './pages/owner/TicketsAdmin';
+import { TicketsOwner } from './pages/owner/TicketsAdmin';
+import TicketsAdmin from './pages/admin/Tickets';
 import { PlatformTickets } from './pages/owner/PlatformTickets';
 import { Organizations } from './pages/owner/Organization';
+import { Organization as OrganizationAdmin } from './pages/admin/Organization';
 import { Users } from './pages/owner/Users';
 import { StaffPage } from './pages/owner/Staff';
 import { OwnerSettings } from './pages/owner/Settings';
 import ActivityLogs from './pages/owner/ActivityLogs';
 import SystemHealth from './pages/owner/SystemHealth';
 import { Notifications as OwnerNotifications } from './pages/owner/Notification';
+import { Notifications as NotificationsAdmin } from './pages/admin/Notifications';
 
 // Organization Admin
 import { AdminOverview } from './pages/admin/Overview';
@@ -341,7 +348,7 @@ export default function App() {
 
         <Route
           path="events"
-          element={<EventsTable />}
+          element={<EventsAdmin />}
         />
 
         <Route
@@ -355,18 +362,23 @@ export default function App() {
         />
 
         <Route
+          path="events/:id/view"
+          element={<EventDetailsAdmin />}
+        />
+
+        <Route
           path="analytics"
           element={<AdminAnalytics />}
         />
 
         <Route
           path="registrations"
-          element={<Registrations />}
+          element={<RegistrationsAdmin />}
         />
 
         <Route
           path="attendees"
-          element={<Attendees />}
+          element={<AttendeesAdmin />}
         />
 
         <Route
@@ -376,7 +388,7 @@ export default function App() {
 
         <Route
           path="organization"
-          element={<Organizations />}
+          element={<OrganizationAdmin />}
         />
 
         <Route
@@ -386,7 +398,7 @@ export default function App() {
 
         <Route
           path="notifications"
-          element={<Notifications />}
+          element={<NotificationsAdmin />}
         />
 
         <Route

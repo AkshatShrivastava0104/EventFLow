@@ -73,7 +73,7 @@ func (s *Service) CreateTicket(
 		return 0, err
 	}
 
-	qrCode, err := generateQRCode(registrationID)
+	checkInToken, err := generateCheckInToken()
 	if err != nil {
 		return 0, err
 	}
@@ -82,7 +82,7 @@ func (s *Service) CreateTicket(
 		ctx,
 		registrationID,
 		ticketNumber,
-		qrCode,
+		checkInToken,
 		userID,
 	)
 	if err != nil {
@@ -137,16 +137,12 @@ func generateTicketNumber() (string, error) {
 	), nil
 }
 
-func generateQRCode(registrationID int64) (string, error) {
-	b := make([]byte, 16)
+func generateCheckInToken() (string, error) {
+	b := make([]byte, 32)
 
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf(
-		"eventflow:ticket:%d:%s",
-		registrationID,
-		hex.EncodeToString(b),
-	), nil
+	return hex.EncodeToString(b), nil
 }

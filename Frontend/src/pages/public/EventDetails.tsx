@@ -1,8 +1,4 @@
-import {
-  useParams,
-  useNavigate,
-  Link,
-} from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Calendar,
@@ -56,10 +52,13 @@ export function EventDetails() {
   });
 
   /*
-   * Get current user's registrations.
+   * Fetch the current user's registrations.
    *
-   * We use this to determine whether this specific
-   * user is already registered for this event.
+   * This is required because the event API may not yet
+   * return is_registered / registration_status.
+   *
+   * A cancelled registration is intentionally NOT treated
+   * as an active registration.
    */
   const {
     data: registrations,
@@ -68,89 +67,51 @@ export function EventDetails() {
     queryKey: ['my-registrations'],
     queryFn: () => RegistrationsAPI.list(),
     enabled: !!id,
+
+    /*
+     * Registration state must never be stale on the
+     * event details page.
+     *
+     * After a successful RSVP, when the user comes
+     * back to this page, always fetch the latest
+     * registration state from the backend.
+     */
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    staleTime: 0,
   });
 
-  /*
-   * We first find the active registration below.
-   * The ticket query depends on that registration.
-   */
-  const activeRegistration =
-    registrations?.find(
-      (registration: any) => {
-        const registrationEventId =
-          Number(
-            registration.event_id ??
-            registration.event?.id,
-          );
+  const activeRegistration = registrations?.find((registration: any) => {
+    const registrationEventId = Number(registration?.event_id ?? registration?.eventId ?? registration?.event?.id ?? 0);
+    const registrationStatus = String(registration?.status ?? '').toLowerCase();
+    return registrationEventId === Number(event?.id ?? 0) && (registrationStatus === 'registered' || registrationStatus === 'confirmed');
+  });
 
-        const registrationStatus =
-          String(
-            registration.status ?? '',
-          ).toLowerCase();
+  const isRegistered =
+    event?.is_registered === true ||
+    event?.registration_status === 'registered' ||
+    !!activeRegistration;
 
-        return (
-          registrationEventId ===
-          Number(id) &&
-          registrationStatus !==
-          'cancelled' &&
-          registrationStatus !==
-          'waitlist' &&
-          registrationStatus !==
-          'waitlisted'
-        );
-      },
-    );
-
-  /*
-   * Get the actual ticket belonging to the
-   * current user's active registration.
-   *
-   * This gives us ticket.id, which is required
-   * for /tickets/:id.
-   */
-  const {
-    data: registrationTickets,
-    isLoading: ticketLoading,
-  } = useQuery({
-    queryKey: [
-      'tickets',
-      'registration',
-      activeRegistration?.id,
-    ],
-    queryFn: () =>
-      TicketsAPI.list({
-        registration_id:
-          activeRegistration!.id,
-      }),
+  const { data: registrationTickets, isLoading: ticketsLoading } = useQuery({
+    queryKey: ['tickets', 'event-registration', activeRegistration?.id],
+    queryFn: () => TicketsAPI.list({ registration_id: activeRegistration!.id }),
     enabled: !!activeRegistration?.id,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 
-  const activeTicket =
-    registrationTickets?.find(
-      (ticket: any) =>
-        Number(ticket.registration_id) ===
-        Number(activeRegistration?.id),
-    ) ??
-    registrationTickets?.[0] ??
-    null;
+  const activeTicket = registrationTickets?.[0];
 
-  if (
-    eventLoading ||
-    registrationsLoading ||
-    (!!activeRegistration &&
-      ticketLoading)
-  ) {
+  if (eventLoading || registrationsLoading || ticketsLoading) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Skeleton className="h-96 w-full" />
-
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_360px]">
           <div className="space-y-3">
             <Skeleton className="h-8 w-2/3" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-full" />
           </div>
-
           <Skeleton className="h-64 w-full" />
         </div>
       </div>
@@ -158,42 +119,13 @@ export function EventDetails() {
   }
 
   if (!event) {
-    return (
-      <div className="p-10 text-center text-ink-500">
-        Event not found.
-      </div>
-    );
+    return <div className="p-10 text-center text-ink-500">Event not found.</div>;
   }
 
-  const gradient =
-    GRAD[event.id % GRAD.length];
-
-  const status = eventStatusLabel(
-    event.status,
-    event.start_at,
-    event.end_at,
-  );
-
-  const soldOut =
-    event.capacity > 0 &&
-    event.registered_count >= event.capacity;
-
-  /*
-   * Event API can also provide registration state,
-   * so support both sources.
-   *
-   * Cancelled registrations are never considered active.
-   */
-  const isRegistered =
-    event.is_registered === true ||
-    event.registration_status ===
-    'registered' ||
-    !!activeRegistration;
-
-  const mediaUrl = resolveMediaUrl(
-    event.cover_image ||
-    (event as any).cover_media_url,
-  );
+  const gradient = GRAD[event.id % GRAD.length];
+  const status = eventStatusLabel(event.status, event.start_at, event.end_at);
+  const soldOut = event.capacity > 0 && event.registered_count >= event.capacity;
+  const mediaUrl = resolveMediaUrl(event.cover_image || (event as any).cover_media_url);
 
   const share = () => {
     navigator.clipboard.writeText(
@@ -296,8 +228,8 @@ export function EventDetails() {
               label="Venue"
               value={event.venue}
               sub={`${event.address}, ${event.city}${event.country
-                  ? ', ' + event.country
-                  : ''
+                ? ', ' + event.country
+                : ''
                 }`}
             />
 
@@ -420,9 +352,6 @@ export function EventDetails() {
                       <Button
                         variant="outline"
                         full
-                        leftIcon={
-                          <TicketIcon className="h-4 w-4" />
-                        }
                       >
                         View my ticket
                       </Button>
@@ -433,7 +362,7 @@ export function EventDetails() {
                       full
                       disabled
                     >
-                      Ticket loading…
+                      Ticket unavailable
                     </Button>
                   )}
                 </>
