@@ -16,7 +16,6 @@ import (
 )
 
 func TestTicketAndCheckinFlow(t *testing.T) {
-
 	ctx := context.Background()
 
 	// ==================================================
@@ -27,11 +26,9 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		ctx,
 		"postgres://postgres:postgres@localhost:5432/eventflow_test?sslmode=disable",
 	)
-
 	if err != nil {
 		t.Fatalf("failed to create db pool: %v", err)
 	}
-
 	defer db.Close()
 
 	if err := db.Ping(ctx); err != nil {
@@ -58,7 +55,6 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 			users
 		RESTART IDENTITY CASCADE
 	`)
-
 	if err != nil {
 		t.Fatalf("failed to clean test db: %v", err)
 	}
@@ -70,7 +66,6 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
-
 	defer redisClient.Close()
 
 	if err := redisClient.Ping(ctx).Err(); err != nil {
@@ -115,16 +110,15 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		RETURNING id
 		`,
 	).Scan(&attendeeID)
-
 	if err != nil {
 		t.Fatalf("failed to create attendee: %v", err)
 	}
 
 	// ==================================================
-	// 6. Create volunteer
+	// 6. Create second attendee
 	// ==================================================
 
-	var volunteerID int64
+	var attendeeID2 int64
 
 	err = db.QueryRow(
 		ctx,
@@ -139,8 +133,8 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 			updated_at
 		)
 		VALUES (
-			'Volunteer',
-			'volunteer@test.com',
+			'Attendee Two',
+			'attendee-two@test.com',
 			'test-password',
 			'user',
 			true,
@@ -149,14 +143,115 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		)
 		RETURNING id
 		`,
-	).Scan(&volunteerID)
-
+	).Scan(&attendeeID2)
 	if err != nil {
-		t.Fatalf("failed to create volunteer: %v", err)
+		t.Fatalf("failed to create second attendee: %v", err)
 	}
 
 	// ==================================================
-	// 7. Organization
+	// 7. Create organization owner
+	// ==================================================
+
+	var ownerID int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO users (
+			name,
+			email,
+			password_hash,
+			role,
+			email_verified,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'Organization Owner',
+			'owner@test.com',
+			'test-password',
+			'user',
+			true,
+			NOW(),
+			NOW()
+		)
+		RETURNING id
+		`,
+	).Scan(&ownerID)
+	if err != nil {
+		t.Fatalf("failed to create owner: %v", err)
+	}
+
+	// ==================================================
+	// 7. Create organization admin
+	// ==================================================
+
+	var adminID int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO users (
+			name,
+			email,
+			password_hash,
+			role,
+			email_verified,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'Organization Admin',
+			'admin@test.com',
+			'test-password',
+			'user',
+			true,
+			NOW(),
+			NOW()
+		)
+		RETURNING id
+		`,
+	).Scan(&adminID)
+	if err != nil {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	// ==================================================
+	// 8. Create organization staff
+	// ==================================================
+
+	var staffID int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO users (
+			name,
+			email,
+			password_hash,
+			role,
+			email_verified,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'Organization Staff',
+			'staff@test.com',
+			'test-password',
+			'user',
+			true,
+			NOW(),
+			NOW()
+		)
+		RETURNING id
+		`,
+	).Scan(&staffID)
+	if err != nil {
+		t.Fatalf("failed to create staff: %v", err)
+	}
+
+	// ==================================================
+	// 9. Organization
 	// ==================================================
 
 	var organizationID int64
@@ -180,14 +275,13 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		)
 		RETURNING id
 		`,
-		volunteerID,
+		ownerID,
 	).Scan(&organizationID)
-
 	if err != nil {
 		t.Fatalf("failed to create organization: %v", err)
 	}
 
-	// Owner membership.
+	// OWNER membership.
 	_, err = db.Exec(
 		ctx,
 		`
@@ -201,21 +295,60 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 			$2,
 			'OWNER'
 		)
-		ON CONFLICT DO NOTHING
 		`,
 		organizationID,
-		volunteerID,
+		ownerID,
 	)
-
 	if err != nil {
-		t.Fatalf(
-			"failed to create owner membership: %v",
-			err,
+		t.Fatalf("failed to create owner membership: %v", err)
+	}
+
+	// ADMIN membership.
+	_, err = db.Exec(
+		ctx,
+		`
+		INSERT INTO organization_members (
+			organization_id,
+			user_id,
+			role
 		)
+		VALUES (
+			$1,
+			$2,
+			'ADMIN'
+		)
+		`,
+		organizationID,
+		adminID,
+	)
+	if err != nil {
+		t.Fatalf("failed to create admin membership: %v", err)
+	}
+
+	// STAFF membership.
+	_, err = db.Exec(
+		ctx,
+		`
+		INSERT INTO organization_members (
+			organization_id,
+			user_id,
+			role
+		)
+		VALUES (
+			$1,
+			$2,
+			'STAFF'
+		)
+		`,
+		organizationID,
+		staffID,
+	)
+	if err != nil {
+		t.Fatalf("failed to create staff membership: %v", err)
 	}
 
 	// ==================================================
-	// 8. Event
+	// 10. Event
 	// ==================================================
 
 	var eventID int64
@@ -247,13 +380,12 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		`,
 		organizationID,
 	).Scan(&eventID)
-
 	if err != nil {
 		t.Fatalf("failed to create event: %v", err)
 	}
 
 	// ==================================================
-	// 9. Registration
+	// 11. Registration
 	// ==================================================
 
 	var registrationID int64
@@ -280,13 +412,12 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		attendeeID,
 		eventID,
 	).Scan(&registrationID)
-
 	if err != nil {
 		t.Fatalf("failed to create registration: %v", err)
 	}
 
 	// ==================================================
-	// 10. Router
+	// 12. Router
 	// ==================================================
 
 	r := SetupRouter(
@@ -296,34 +427,59 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 	)
 
 	// ==================================================
-	// 11. Attendee JWT
+	// 13. JWT helper
 	// ==================================================
 
-	attendeeClaims := jwt.MapClaims{
-		"user_id": attendeeID,
-		"email":   "attendee@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
+	createToken := func(userID int64, email string) string {
+		claims := jwt.MapClaims{
+			"user_id":     userID,
+			"email":       email,
+			"role":        "user",
+			"auth_version": 1,
+			"exp":         time.Now().Add(time.Hour).Unix(),
+		}
 
-	attendeeJWT := jwt.NewWithClaims(
-		jwt.SigningMethodHS256,
-		attendeeClaims,
-	)
-
-	attendeeToken, err := attendeeJWT.SignedString(
-		[]byte(cfg.JWTSecret),
-	)
-
-	if err != nil {
-		t.Fatalf(
-			"failed to create attendee JWT: %v",
-			err,
+		token := jwt.NewWithClaims(
+			jwt.SigningMethodHS256,
+			claims,
 		)
+
+		signedToken, err := token.SignedString(
+			[]byte(cfg.JWTSecret),
+		)
+		if err != nil {
+			t.Fatalf(
+				"failed to create JWT for %s: %v",
+				email,
+				err,
+			)
+		}
+
+		return signedToken
 	}
 
+	attendeeToken := createToken(
+		attendeeID,
+		"attendee@test.com",
+	)
+
+	attendeeToken2 := createToken(
+		attendeeID2,
+		"attendee-two@test.com",
+	)
+
+	adminToken := createToken(
+		adminID,
+		"admin@test.com",
+	)
+
+	staffToken := createToken(
+		staffID,
+		"staff@test.com",
+	)
+
 	// ==================================================
-	// 12. Create ticket
+	// 14. Create ticket
 	// ==================================================
 
 	ticketURL := "/api/v1/registrations/" +
@@ -362,12 +518,10 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		)
 	}
 
-	t.Log(
-		"✅ Ticket creation passed",
-	)
+	t.Log("✅ Ticket creation passed")
 
 	// ==================================================
-	// 13. Read ticket from DB
+	// 15. Read ticket from DB
 	// ==================================================
 
 	var (
@@ -392,7 +546,6 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		&ticketNumber,
 		&qrCode,
 	)
-
 	if err != nil {
 		t.Fatalf(
 			"failed to fetch ticket: %v",
@@ -409,34 +562,7 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 	}
 
 	// ==================================================
-	// 14. Volunteer JWT
-	// ==================================================
-
-	volunteerClaims := jwt.MapClaims{
-		"user_id": volunteerID,
-		"email":   "volunteer@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
-	}
-
-	volunteerJWT := jwt.NewWithClaims(
-		jwt.SigningMethodHS256,
-		volunteerClaims,
-	)
-
-	volunteerToken, err := volunteerJWT.SignedString(
-		[]byte(cfg.JWTSecret),
-	)
-
-	if err != nil {
-		t.Fatalf(
-			"failed to create volunteer JWT: %v",
-			err,
-		)
-	}
-
-	// ==================================================
-	// 15. Check-in
+	// 16. Check-in request helper
 	// ==================================================
 
 	checkinURL := "/api/v1/events/" +
@@ -447,44 +573,191 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		"ticket_number":"` + ticketNumber + `"
 	}`
 
-	checkinReq := httptest.NewRequest(
+	doCheckin := func(token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(
+			http.MethodPost,
+			checkinURL,
+			strings.NewReader(checkinBody),
+		)
+
+		req.Header.Set(
+			"Authorization",
+			"Bearer "+token,
+		)
+
+		req.Header.Set(
+			"Content-Type",
+			"application/json",
+		)
+
+		recorder := httptest.NewRecorder()
+
+		r.ServeHTTP(
+			recorder,
+			req,
+		)
+
+		return recorder
+	}
+
+	// ==================================================
+	// 17. ADMIN check-in
+	// ==================================================
+	//
+	// Service.go explicitly allows:
+	// ADMIN and STAFF.
+	//
+	// Therefore ADMIN must receive 201 when the
+	// ticket has not been checked in yet.
+
+	adminRecorder := doCheckin(adminToken)
+
+	if adminRecorder.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected ADMIN check-in status %d, got %d, body=%s",
+			http.StatusCreated,
+			adminRecorder.Code,
+			adminRecorder.Body.String(),
+		)
+	}
+
+	t.Log("✅ ADMIN check-in passed")
+
+	// ==================================================
+	// 18. STAFF check-in on a different ticket
+	// ==================================================
+	//
+	// The first ticket is already checked in by ADMIN.
+	// A second attendee is used because the database
+	// correctly allows only one active registration for
+	// the same user/event pair.
+	// ==================================================
+
+	var registrationID2 int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO registrations (
+			user_id,
+			event_id,
+			status,
+			payment_status,
+			created_at
+		)
+		VALUES (
+			$1,
+			$2,
+			'pending',
+			'unpaid',
+			NOW()
+		)
+		RETURNING id
+		`,
+		attendeeID2,
+		eventID,
+	).Scan(&registrationID2)
+	if err != nil {
+		t.Fatalf(
+			"failed to create second registration: %v",
+			err,
+		)
+	}
+
+	ticketURL2 := "/api/v1/registrations/" +
+		strconv.FormatInt(registrationID2, 10) +
+		"/ticket"
+
+	ticketReq2 := httptest.NewRequest(
 		http.MethodPost,
-		checkinURL,
-		strings.NewReader(checkinBody),
+		ticketURL2,
+		nil,
 	)
 
-	checkinReq.Header.Set(
+	ticketReq2.Header.Set(
 		"Authorization",
-		"Bearer "+volunteerToken,
+		"Bearer "+attendeeToken2,
 	)
 
-	checkinReq.Header.Set(
+	ticketReq2.Header.Set(
 		"Content-Type",
 		"application/json",
 	)
 
-	checkinRecorder := httptest.NewRecorder()
+	ticketRecorder2 := httptest.NewRecorder()
 
 	r.ServeHTTP(
-		checkinRecorder,
-		checkinReq,
+		ticketRecorder2,
+		ticketReq2,
 	)
 
-	if checkinRecorder.Code != http.StatusCreated {
+	if ticketRecorder2.Code != http.StatusCreated {
 		t.Fatalf(
-			"expected check-in status %d, got %d, body=%s",
+			"expected second ticket status %d, got %d, body=%s",
 			http.StatusCreated,
-			checkinRecorder.Code,
-			checkinRecorder.Body.String(),
+			ticketRecorder2.Code,
+			ticketRecorder2.Body.String(),
 		)
 	}
 
-	t.Log(
-		"✅ First check-in passed",
+	var ticketNumber2 string
+
+	err = db.QueryRow(
+		ctx,
+		`
+		SELECT ticket_number
+		FROM tickets
+		WHERE registration_id = $1
+		`,
+		registrationID2,
+	).Scan(&ticketNumber2)
+	if err != nil {
+		t.Fatalf(
+			"failed to fetch second ticket: %v",
+			err,
+		)
+	}
+
+	checkinBody2 := `{
+		"ticket_number":"` + ticketNumber2 + `"
+	}`
+
+	staffReq := httptest.NewRequest(
+		http.MethodPost,
+		checkinURL,
+		strings.NewReader(checkinBody2),
 	)
 
+	staffReq.Header.Set(
+		"Authorization",
+		"Bearer "+staffToken,
+	)
+
+	staffReq.Header.Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	staffRecorder := httptest.NewRecorder()
+
+	r.ServeHTTP(
+		staffRecorder,
+		staffReq,
+	)
+
+	if staffRecorder.Code != http.StatusCreated {
+		t.Fatalf(
+			"expected STAFF check-in status %d, got %d, body=%s",
+			http.StatusCreated,
+			staffRecorder.Code,
+			staffRecorder.Body.String(),
+		)
+	}
+
+	t.Log("✅ STAFF check-in passed")
+
 	// ==================================================
-	// 16. Verify DB check-in
+	// 19. Verify DB check-ins
 	// ==================================================
 
 	var checkinCount int
@@ -494,57 +767,34 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		`
 		SELECT COUNT(*)
 		FROM checkins
-		WHERE ticket_id = $1
+		WHERE ticket_id IN ($1, (
+			SELECT id
+			FROM tickets
+			WHERE registration_id = $2
+		))
 		`,
 		ticketID,
+		registrationID2,
 	).Scan(&checkinCount)
-
 	if err != nil {
 		t.Fatalf(
-			"failed to verify check-in: %v",
+			"failed to verify check-ins: %v",
 			err,
 		)
 	}
 
-	if checkinCount != 1 {
+	if checkinCount != 2 {
 		t.Fatalf(
-			"expected exactly 1 check-in, got %d",
+			"expected exactly 2 check-ins, got %d",
 			checkinCount,
 		)
 	}
 
 	// ==================================================
-	// 17. Duplicate check-in must return 409
+	// 20. Duplicate check-in must return 409
 	// ==================================================
 
-	duplicateReq := httptest.NewRequest(
-		http.MethodPost,
-		checkinURL,
-		strings.NewReader(checkinBody),
-	)
-
-	duplicateReq.Header.Set(
-		"Authorization",
-		"Bearer "+volunteerToken,
-	)
-
-	duplicateReq.Header.Set(
-		"Content-Type",
-		"application/json",
-	)
-
-	duplicateRecorder := httptest.NewRecorder()
-
-	r.ServeHTTP(
-		duplicateRecorder,
-		duplicateReq,
-	)
-
-	t.Logf(
-		"DUPLICATE CHECKIN → status=%d body=%s",
-		duplicateRecorder.Code,
-		duplicateRecorder.Body.String(),
-	)
+	duplicateRecorder := doCheckin(adminToken)
 
 	if duplicateRecorder.Code != http.StatusConflict {
 		t.Fatalf(
@@ -555,9 +805,13 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		)
 	}
 
+	t.Log("✅ Duplicate check-in correctly rejected with 409")
+
 	// ==================================================
-	// 18. Verify no duplicate DB row
+	// 21. Verify no duplicate DB row
 	// ==================================================
+
+	var firstTicketCheckins int
 
 	err = db.QueryRow(
 		ctx,
@@ -567,8 +821,7 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		WHERE ticket_id = $1
 		`,
 		ticketID,
-	).Scan(&checkinCount)
-
+	).Scan(&firstTicketCheckins)
 	if err != nil {
 		t.Fatalf(
 			"failed to verify duplicate protection: %v",
@@ -576,18 +829,12 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		)
 	}
 
-	if checkinCount != 1 {
+	if firstTicketCheckins != 1 {
 		t.Fatalf(
-			"expected exactly 1 check-in after duplicate attempt, got %d",
-			checkinCount,
+			"expected exactly 1 check-in for first ticket, got %d",
+			firstTicketCheckins,
 		)
 	}
 
-	t.Log(
-		"✅ Duplicate check-in correctly rejected with 409",
-	)
-
-	t.Log(
-		"✅ Ticket → Check-in → Duplicate protection flow passed",
-	)
+	t.Log("✅ Ticket → ADMIN/STAFF authorization → Duplicate protection flow passed")
 }
