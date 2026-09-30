@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
 
     services:
+      # --------------------------------
+      # PostgreSQL test database
+      # --------------------------------
       postgres:
         image: postgres:15
 
@@ -31,11 +34,29 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
+      # --------------------------------
+      # Redis test service
+      # --------------------------------
+      redis:
+        image: redis:7-alpine
+
+        ports:
+          - 6379:6379
+
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     defaults:
       run:
         working-directory: Backend
 
     env:
+      # --------------------------------
+      # PostgreSQL
+      # --------------------------------
       DB_HOST: localhost
       DB_PORT: 5432
       DB_USER: postgres
@@ -48,9 +69,15 @@ jobs:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: eventflow_test
 
+      # --------------------------------
+      # Redis
+      # --------------------------------
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+
     steps:
       # --------------------------------
-      # Checkout
+      # Checkout repository
       # --------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -66,7 +93,7 @@ jobs:
           cache-dependency-path: Backend/go.sum
 
       # --------------------------------
-      # Download dependencies
+      # Download Go dependencies
       # --------------------------------
       - name: Download dependencies
         run: go mod download
@@ -76,7 +103,8 @@ jobs:
       # --------------------------------
       - name: Install golang-migrate
         run: |
-          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.18.3/migrate.linux-amd64.tar.gz \
+          curl -L \
+            https://github.com/golang-migrate/migrate/releases/download/v4.18.3/migrate.linux-amd64.tar.gz \
             -o /tmp/migrate.tar.gz
 
           tar -xzf /tmp/migrate.tar.gz -C /tmp
@@ -96,7 +124,7 @@ jobs:
             up
 
       # --------------------------------
-      # Verify database schema
+      # Verify PostgreSQL schema
       # --------------------------------
       - name: Verify database schema
         run: |
@@ -106,6 +134,16 @@ jobs:
             -U postgres \
             -d eventflow_test \
             -c "\dt"
+
+      # --------------------------------
+      # Verify Redis
+      # --------------------------------
+      - name: Verify Redis
+        run: |
+          redis-cli \
+            -h localhost \
+            -p 6379 \
+            ping
 
       # --------------------------------
       # Run tests
