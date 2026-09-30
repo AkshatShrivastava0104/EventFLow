@@ -220,28 +220,14 @@ func TestTicketCreationUsesOutboxForNotification(t *testing.T) {
 		t.Fatalf("failed to create organization: %v", err)
 	}
 
-	_, err = db.Exec(
-		ctx,
-		`
-		INSERT INTO organization_members (
-			organization_id,
-			user_id,
-			role
-		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		ON CONFLICT DO NOTHING
-		`,
-		organizationID,
-		userID,
-	)
-
-	if err != nil {
-		t.Fatalf("failed to create owner membership: %v", err)
-	}
+	// The organization owner is represented by organizations.owner_id.
+	//
+	// OWNER is intentionally NOT inserted into organization_members
+	// because organization membership roles are separate from the
+	// platform-level organization owner.
+	//
+	// Valid membership roles are handled separately by the
+	// organization membership RBAC flow.
 
 	// ==================================================
 	// 10. Create published event
@@ -338,11 +324,15 @@ func TestTicketCreationUsesOutboxForNotification(t *testing.T) {
 	// 13. JWT
 	// ==================================================
 
+	// users.auth_version defaults to 1.
+	// The authentication middleware validates the JWT's
+	// auth_version against the current database value.
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   "ticket-outbox@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":      userID,
+		"email":        "ticket-outbox@test.com",
+		"role":         "user",
+		"auth_version": 1,
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(
@@ -357,6 +347,11 @@ func TestTicketCreationUsesOutboxForNotification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create JWT: %v", err)
 	}
+
+	t.Logf(
+		"✅ JWT created for user_id=%d auth_version=1",
+		userID,
+	)
 
 	// ==================================================
 	// 14. Create ticket through HTTP API
