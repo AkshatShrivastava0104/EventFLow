@@ -281,11 +281,11 @@ func TestRegisterFullEventAutomaticallyWaitlistsUser(t *testing.T) {
 	// ==================================================
 
 	var (
-		debugEventID       int64
+		debugEventID        int64
 		debugOrganizationID int64
-		debugTitle         string
-		debugCapacity      *int
-		debugStatus        string
+		debugTitle          string
+		debugCapacity       *int
+		debugStatus         string
 	)
 
 	err = db.QueryRow(
@@ -342,6 +342,7 @@ func TestRegisterFullEventAutomaticallyWaitlistsUser(t *testing.T) {
 	// ==================================================
 	// 10. DEBUG: Test Event Repository directly
 	// ==================================================
+
 	outboxRepo := outbox.NewRepository(db)
 
 	eventRepo := event.NewRepository(db, outboxRepo)
@@ -459,11 +460,15 @@ func TestRegisterFullEventAutomaticallyWaitlistsUser(t *testing.T) {
 	// 14. Create JWT for User B
 	// ==================================================
 
+	// users.auth_version defaults to 1.
+	// The authentication middleware validates the JWT's
+	// auth_version against the current database value.
 	claims := jwt.MapClaims{
-		"user_id": userBID,
-		"email":   "userb@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":     userBID,
+		"email":       "userb@test.com",
+		"role":        "user",
+		"auth_version": 1,
+		"exp":         time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(
@@ -483,7 +488,7 @@ func TestRegisterFullEventAutomaticallyWaitlistsUser(t *testing.T) {
 	}
 
 	t.Logf(
-		"✅ JWT created for user_id=%d",
+		"✅ JWT created for user_id=%d auth_version=1",
 		userBID,
 	)
 
