@@ -76,6 +76,7 @@ jobs:
       REDIS_PORT: 6379
 
     steps:
+
       # --------------------------------
       # Checkout repository
       # --------------------------------
@@ -83,7 +84,7 @@ jobs:
         uses: actions/checkout@v4
 
       # --------------------------------
-      # Go setup
+      # Setup Go
       # --------------------------------
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -93,7 +94,7 @@ jobs:
           cache-dependency-path: Backend/go.sum
 
       # --------------------------------
-      # Download Go dependencies
+      # Download dependencies
       # --------------------------------
       - name: Download dependencies
         run: go mod download
@@ -140,7 +141,10 @@ jobs:
       # --------------------------------
       - name: Verify Redis
         run: |
-          redis-cli \
+          docker run --rm \
+            --network host \
+            redis:7-alpine \
+            redis-cli \
             -h localhost \
             -p 6379 \
             ping
