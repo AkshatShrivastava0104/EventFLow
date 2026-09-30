@@ -14,7 +14,6 @@ import (
 )
 
 func TestOwnerProtectedEventEndpoint(t *testing.T) {
-
 	ctx := context.Background()
 
 	db, err := pgxpool.New(
@@ -95,7 +94,7 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 	).Scan(&userID)
 
 	if err != nil {
-		t.Fatalf("failed to create user: %v", err)
+		t.Fatalf("failed to create normal user: %v", err)
 	}
 
 	// --------------------------------------------------
@@ -134,6 +133,41 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 	}
 
 	// --------------------------------------------------
+	// Create admin
+	// --------------------------------------------------
+
+	var adminID int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO users (
+			name,
+			email,
+			password_hash,
+			role,
+			email_verified,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'Admin User',
+			'admin-rbac@test.com',
+			'test-password',
+			'user',
+			true,
+			NOW(),
+			NOW()
+		)
+		RETURNING id
+		`,
+	).Scan(&adminID)
+
+	if err != nil {
+		t.Fatalf("failed to create admin: %v", err)
+	}
+
+	// --------------------------------------------------
 	// Organization
 	// --------------------------------------------------
 
@@ -165,6 +199,10 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 		t.Fatalf("failed to create organization: %v", err)
 	}
 
+	// --------------------------------------------------
+	// Owner membership
+	// --------------------------------------------------
+
 	_, err = db.Exec(
 		ctx,
 		`
@@ -186,6 +224,33 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("failed to create owner membership: %v", err)
+	}
+
+	// --------------------------------------------------
+	// Admin membership
+	// --------------------------------------------------
+
+	_, err = db.Exec(
+		ctx,
+		`
+		INSERT INTO organization_members (
+			organization_id,
+			user_id,
+			role
+		)
+		VALUES (
+			$1,
+			$2,
+			'ADMIN'
+		)
+		ON CONFLICT DO NOTHING
+		`,
+		organizationID,
+		adminID,
+	)
+
+	if err != nil {
+		t.Fatalf("failed to create admin membership: %v", err)
 	}
 
 	// --------------------------------------------------
@@ -233,39 +298,13 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 	)
 
 	// --------------------------------------------------
-	// Case 1: no token → 401
-	// --------------------------------------------------
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/api/v1/events/"+int64ToString(eventID)+"/publish",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
-
-	r.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf(
-			"expected 401 without token, got %d body=%s",
-			rec.Code,
-			rec.Body.String(),
-		)
-	}
-
-	t.Log("✅ No token → 401")
-
-	// --------------------------------------------------
 	// Helper to create token
 	// --------------------------------------------------
 
-	createToken := func(
-		userID int64,
-	) string {
-
+	createToken := func(userID int64) string {
 		claims := jwt.MapClaims{
-			"user_id": userID,
+			"user_id":      userID,
+			"auth_version": 1,
 			"exp": time.Now().
 				Add(time.Hour).
 				Unix(),
@@ -287,15 +326,43 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 		return value
 	}
 
+	eventURL := "/api/v1/events/" +
+		int64ToString(eventID) +
+		"/publish"
+
 	// --------------------------------------------------
-	// Case 2: normal user → 403
+	// Case 1: No token → 401
+	// --------------------------------------------------
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		eventURL,
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf(
+			"expected 401 without token, got %d body=%s",
+			rec.Code,
+			rec.Body.String(),
+		)
+	}
+
+	t.Log("✅ No token → 401")
+
+	// --------------------------------------------------
+	// Case 2: Normal user → 403
 	// --------------------------------------------------
 
 	userToken := createToken(userID)
 
 	req = httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/events/"+int64ToString(eventID)+"/publish",
+		eventURL,
 		nil,
 	)
 
@@ -310,7 +377,7 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf(
-			"expected 403 for non-member/non-owner, got %d body=%s",
+			"expected 403 for normal user, got %d body=%s",
 			rec.Code,
 			rec.Body.String(),
 		)
@@ -319,14 +386,14 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 	t.Log("✅ Normal user → 403")
 
 	// --------------------------------------------------
-	// Case 3: owner → allowed
+	// Case 3: Owner → 403
 	// --------------------------------------------------
 
 	ownerToken := createToken(ownerID)
 
 	req = httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/events/"+int64ToString(eventID)+"/publish",
+		eventURL,
 		nil,
 	)
 
@@ -339,15 +406,78 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 
 	r.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusForbidden {
 		t.Fatalf(
-			"expected 200 for owner, got %d body=%s",
+			"expected 403 for owner, got %d body=%s",
 			rec.Code,
 			rec.Body.String(),
 		)
 	}
 
-	t.Log("✅ Owner → allowed")
+	t.Log("✅ Owner → 403")
+
+	// --------------------------------------------------
+	// Case 4: Admin → 200
+	// --------------------------------------------------
+
+	adminToken := createToken(adminID)
+
+	req = httptest.NewRequest(
+		http.MethodPost,
+		eventURL,
+		nil,
+	)
+
+	req.Header.Set(
+		"Authorization",
+		"Bearer "+adminToken,
+	)
+
+	rec = httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf(
+			"expected 200 for admin, got %d body=%s",
+			rec.Code,
+			rec.Body.String(),
+		)
+	}
+
+	t.Log("✅ Admin → 200")
+
+	// --------------------------------------------------
+	// Verify event was actually published
+	// --------------------------------------------------
+
+	var status string
+
+	err = db.QueryRow(
+		ctx,
+		`
+		SELECT status
+		FROM events
+		WHERE id = $1
+		`,
+		eventID,
+	).Scan(&status)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to verify event status: %v",
+			err,
+		)
+	}
+
+	if status != "published" {
+		t.Fatalf(
+			"expected event status to be published, got %q",
+			status,
+		)
+	}
+
+	t.Log("✅ Event status changed to published")
 
 	t.Log("✅ Authentication + RBAC integration test passed")
 }

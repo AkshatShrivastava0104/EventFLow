@@ -106,10 +106,11 @@ func TestAPIValidation(t *testing.T) {
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.MapClaims{
-			"user_id": userID,
-			"email":   "validation@test.com",
-			"role":    "user",
-			"exp":     time.Now().Add(time.Hour).Unix(),
+			"user_id":      userID,
+			"email":        "validation@test.com",
+			"role":         "user",
+			"auth_version": 1,
+			"exp":          time.Now().Add(time.Hour).Unix(),
 		},
 	)
 
