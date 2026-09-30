@@ -1,0 +1,45 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - frontend/role-based-dashboards
+  pull_request:
+    branches:
+      - frontend/role-based-dashboards
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: Backend/go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build Go binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+          go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o eventflow-api \
+            ./cmd/api
+
+      - name: Build Docker image
+        run: docker build -t eventflow-api:ci .
