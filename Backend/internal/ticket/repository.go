@@ -50,7 +50,28 @@ func (r *Repository) CreateTicket(
 	}()
 
 	// --------------------------------------------------
-	// 1. Verify registration belongs to user
+	// 1. Serialize ticket creation for this registration
+	//
+	// Every concurrent CreateTicket call for the same
+	// registration acquires the same transaction-scoped
+	// PostgreSQL advisory lock.
+	//
+	// Different registrations use different lock keys and
+	// therefore do not block each other.
+	// --------------------------------------------------
+
+	_, err = tx.Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock($1::bigint)`,
+		registrationID,
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	// --------------------------------------------------
+	// 2. Verify registration belongs to user
 	// --------------------------------------------------
 
 	var registrationUserID int64
@@ -87,7 +108,7 @@ func (r *Repository) CreateTicket(
 	}
 
 	// --------------------------------------------------
-	// 2. Prevent duplicate ticket
+	// 3. Prevent duplicate ticket
 	// --------------------------------------------------
 
 	var existingTicketID int64
@@ -110,7 +131,7 @@ func (r *Repository) CreateTicket(
 	}
 
 	// --------------------------------------------------
-	// 3. Create ticket
+	// 4. Create ticket
 	// --------------------------------------------------
 
 	var ticketID int64
@@ -144,7 +165,7 @@ func (r *Repository) CreateTicket(
 	}
 
 	// --------------------------------------------------
-	// 4. Create outbox notification
+	// 5. Create outbox notification
 	// --------------------------------------------------
 
 	_, err = r.outboxRepo.Create(
@@ -165,7 +186,7 @@ func (r *Repository) CreateTicket(
 	}
 
 	// --------------------------------------------------
-	// 5. Commit ticket + notification atomically
+	// 6. Commit ticket + notification atomically
 	// --------------------------------------------------
 
 	if err := tx.Commit(ctx); err != nil {
