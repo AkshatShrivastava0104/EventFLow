@@ -24,23 +24,24 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	err := godotenv.Load()
-	if err != nil {
-		return nil, err
+	// Load .env when available.
+	// In production, environment variables are injected by Docker
+	// and a .env file is not required.
+	_ = godotenv.Load()
+
+	cfg := &Config{
+		AppName:    os.Getenv("APP_NAME"),
+		AppEnv:     os.Getenv("APP_ENV"),
+		Port:       os.Getenv("PORT"),
+		DBHost:     os.Getenv("DB_HOST"),
+		DBPort:     os.Getenv("DB_PORT"),
+		DBUser:     os.Getenv("DB_USER"),
+		DBPassword: os.Getenv("DB_PASSWORD"),
+		DBName:     os.Getenv("DB_NAME"),
+		RedisHost:  os.Getenv("REDIS_HOST"),
+		RedisPort:  os.Getenv("REDIS_PORT"),
+		JWTSecret:  os.Getenv("JWT_SECRET"),
 	}
 
-    cfg := &Config{
-        AppName:    os.Getenv("APP_NAME"),
-        AppEnv:     os.Getenv("APP_ENV"),
-        Port:       os.Getenv("PORT"),
-        DBHost:     os.Getenv("DB_HOST"),
-        DBPort:     os.Getenv("DB_PORT"),
-        DBUser:     os.Getenv("DB_USER"),
-        DBPassword: os.Getenv("DB_PASSWORD"),
-        DBName:     os.Getenv("DB_NAME"),
-        RedisHost:  os.Getenv("REDIS_HOST"),
-        RedisPort:  os.Getenv("REDIS_PORT"),
-        JWTSecret:  os.Getenv("JWT_SECRET"),
-	}
-    return cfg, nil
+	return cfg, nil
 }
