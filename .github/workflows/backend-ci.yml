@@ -111,7 +111,9 @@ jobs:
             ping
 
       - name: Run tests
-        run: go test -p 1 ./...
+        run: |
+          go clean -testcache
+          go test -count=1 -p 1 ./... -v
 
       - name: Build Go binary
         run: |
