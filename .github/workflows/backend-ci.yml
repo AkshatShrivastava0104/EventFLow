@@ -147,7 +147,14 @@ jobs:
       - name: Run router tests
         run: |
           go clean -testcache
-          go test -count=1 -p 1 ./internal/router -v
+          go test -count=1 -p 1 ./internal/router -v 2>&1 | tee router-test-output.txt
+
+	- name: Show router test failures
+        if: failure()
+        run: |
+          echo "========== ROUTER TEST FAILURES =========="
+          grep -B 5 -A 15 -E -- "--- FAIL:|FAIL:|Error:|expected .* got" router-test-output.txt || true
+          echo "=========================================="
 
       - name: Run all backend tests
         run: |
