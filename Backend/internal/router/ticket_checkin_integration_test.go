@@ -281,28 +281,6 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 		t.Fatalf("failed to create organization: %v", err)
 	}
 
-	// OWNER membership.
-	_, err = db.Exec(
-		ctx,
-		`
-		INSERT INTO organization_members (
-			organization_id,
-			user_id,
-			role
-		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		`,
-		organizationID,
-		ownerID,
-	)
-	if err != nil {
-		t.Fatalf("failed to create owner membership: %v", err)
-	}
-
 	// ADMIN membership.
 	_, err = db.Exec(
 		ctx,

@@ -1,0 +1,129 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - frontend/role-based-dashboards
+
+  pull_request:
+    branches:
+      - frontend/role-based-dashboards
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: eventflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d eventflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: Backend
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: eventflow_test
+
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: eventflow_test
+
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: Backend/go.mod
+          cache: true
+          cache-dependency-path: Backend/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Install golang-migrate
+        run: |
+          curl -L \
+            https://github.com/golang-migrate/migrate/releases/download/v4.18.3/migrate.linux-amd64.tar.gz \
+            -o /tmp/migrate.tar.gz
+
+          tar -xzf /tmp/migrate.tar.gz -C /tmp
+
+          sudo mv /tmp/migrate /usr/local/bin/migrate
+
+          migrate -version
+
+      - name: Run database migrations
+        run: |
+          migrate \
+            -path migrations \
+            -database "postgres://postgres:postgres@localhost:5432/eventflow_test?sslmode=disable" \
+            up
+
+      - name: Verify database schema
+        run: |
+          PGPASSWORD=postgres psql \
+            -h localhost \
+            -p 5432 \
+            -U postgres \
+            -d eventflow_test \
+            -c "\dt"
+
+      - name: Verify Redis
+        run: |
+          docker run --rm \
+            --network host \
+            redis:7-alpine \
+            redis-cli \
+            -h localhost \
+            -p 6379 \
+            ping
+
+      - name: Run tests
+        run: go test -p 1 ./...
+
+      - name: Build Go binary
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+          go build \
+            -trimpath \
+            -ldflags="-s -w" \
+            -o eventflow-api \
+            ./cmd/api
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t eventflow-api:ci \
+            .
