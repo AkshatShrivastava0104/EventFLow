@@ -169,22 +169,14 @@ func TestPaginationEndpoints(t *testing.T) {
 			user_id,
 			role
 		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		ON CONFLICT DO NOTHING
+		VALUES ($1, $2, 'ADMIN')
 		`,
 		organizationID,
 		userID,
 	)
 
 	if err != nil {
-		t.Fatalf(
-			"failed to create owner membership: %v",
-			err,
-		)
+		t.Fatalf("failed to create admin membership: %v", err)
 	}
 
 	t.Log("✅ Organization created")

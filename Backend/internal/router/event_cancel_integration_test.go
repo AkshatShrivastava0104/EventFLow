@@ -324,33 +324,6 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 		)
 	}
 
-	// Owner membership.
-	_, err = db.Exec(
-		ctx,
-		`
-		INSERT INTO organization_members (
-			organization_id,
-			user_id,
-			role
-		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		ON CONFLICT DO NOTHING
-		`,
-		organizationID,
-		ownerID,
-	)
-
-	if err != nil {
-		t.Fatalf(
-			"failed to create owner membership: %v",
-			err,
-		)
-	}
-
 	// Admin membership.
 	_, err = db.Exec(
 		ctx,
