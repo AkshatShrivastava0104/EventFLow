@@ -30,6 +30,7 @@ func TestRegistrationUsesOutboxForNotification(t *testing.T) {
 		ctx,
 		"postgres://postgres:postgres@localhost:5432/eventflow_test?sslmode=disable",
 	)
+
 	if err != nil {
 		t.Fatalf("failed to create db pool: %v", err)
 	}
@@ -284,10 +285,11 @@ func TestRegistrationUsesOutboxForNotification(t *testing.T) {
 	// ==================================================
 
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   "outbox@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":      userID,
+		"email":        "outbox@test.com",
+		"role":         "user",
+		"auth_version": 1,
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(

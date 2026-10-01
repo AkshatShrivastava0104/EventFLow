@@ -391,6 +391,7 @@ func TestCancelRegistrationPromotesWaitlistedUser(t *testing.T) {
 		"user_id": userAID,
 		"email":   "promotion-a@test.com",
 		"role":    "user",
+			"auth_version": 1,
 		"exp":     time.Now().Add(time.Hour).Unix(),
 	}
 

@@ -192,7 +192,45 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	}
 
 	// ==================================================
-	// 9. Create attendees
+	// 9. Create event admin
+	// ==================================================
+
+	var adminID int64
+
+	err = db.QueryRow(
+		ctx,
+		`
+		INSERT INTO users (
+			name,
+			email,
+			password_hash,
+			role,
+			email_verified,
+			created_at,
+			updated_at
+		)
+		VALUES (
+			'Event Admin',
+			'admin-cancel@test.com',
+			'test-password',
+			'user',
+			true,
+			NOW(),
+			NOW()
+		)
+		RETURNING id
+		`,
+	).Scan(&adminID)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to create admin: %v",
+			err,
+		)
+	}
+
+	// ==================================================
+	// 10. Create attendees
 	// ==================================================
 
 	const attendeeCount = 3
@@ -245,13 +283,14 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	}
 
 	t.Logf(
-		"✅ Created owner=%d and %d attendees",
+		"✅ Created owner=%d, admin=%d and %d attendees",
 		ownerID,
+		adminID,
 		attendeeCount,
 	)
 
 	// ==================================================
-	// 10. Create organization
+	// 11. Create organization
 	// ==================================================
 
 	var organizationID int64
@@ -312,8 +351,42 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 		)
 	}
 
+	// Admin membership.
+	_, err = db.Exec(
+		ctx,
+		`
+		INSERT INTO organization_members (
+			organization_id,
+			user_id,
+			role
+		)
+		VALUES (
+			$1,
+			$2,
+			'ADMIN'
+		)
+		ON CONFLICT DO NOTHING
+		`,
+		organizationID,
+		adminID,
+	)
+
+	if err != nil {
+		t.Fatalf(
+			"failed to create admin membership: %v",
+			err,
+		)
+	}
+
+	t.Logf(
+		"✅ Organization created: organization_id=%d owner_id=%d admin_id=%d",
+		organizationID,
+		ownerID,
+		adminID,
+	)
+
 	// ==================================================
-	// 11. Create published event
+	// 12. Create published event
 	// ==================================================
 
 	var eventID int64
@@ -359,7 +432,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	)
 
 	// ==================================================
-	// 12. Register all attendees
+	// 13. Register all attendees
 	// ==================================================
 
 	for _, attendeeID := range attendeeIDs {
@@ -398,7 +471,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	t.Log("✅ All attendees registered")
 
 	// ==================================================
-	// 13. Router
+	// 14. Router
 	// ==================================================
 
 	r := SetupRouter(
@@ -410,14 +483,15 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	t.Log("✅ Router created")
 
 	// ==================================================
-	// 14. Owner JWT
+	// 15. Admin JWT
 	// ==================================================
 
 	claims := jwt.MapClaims{
-		"user_id": ownerID,
-		"email":   "owner-cancel@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":      adminID,
+		"email":        "admin-cancel@test.com",
+		"role":         "user",
+		"auth_version": 1,
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(
@@ -431,13 +505,18 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf(
-			"failed to create owner JWT: %v",
+			"failed to create admin JWT: %v",
 			err,
 		)
 	}
 
+	t.Logf(
+		"✅ Admin JWT created: user_id=%d auth_version=1",
+		adminID,
+	)
+
 	// ==================================================
-	// 15. Cancel event through HTTP API
+	// 16. Cancel event through HTTP API
 	// ==================================================
 
 	cancelURL := "/api/v1/events/" +
@@ -478,7 +557,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	}
 
 	// ==================================================
-	// 16. Verify event cancelled
+	// 17. Verify event cancelled
 	// ==================================================
 
 	var eventStatus string
@@ -510,7 +589,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	t.Log("✅ Event status changed to cancelled")
 
 	// ==================================================
-	// 17. Verify outbox events
+	// 18. Verify outbox events
 	// ==================================================
 
 	var outboxCount int
@@ -525,7 +604,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 			WHERE event_type = 'NOTIFICATION'
 			  AND aggregate_type = 'event'
 			  AND aggregate_id = $1
-		`,
+			`,
 			strconv.FormatInt(eventID, 10),
 		).Scan(&outboxCount)
 
@@ -557,7 +636,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	)
 
 	// ==================================================
-	// 18. Wait for notifications
+	// 19. Wait for notifications
 	// ==================================================
 
 	var notificationCount int
@@ -570,7 +649,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 			SELECT COUNT(*)
 			FROM notifications
 			WHERE type = 'EVENT_CANCELLED'
-		`,
+			`,
 		).Scan(&notificationCount)
 
 		if err != nil {
@@ -601,7 +680,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	)
 
 	// ==================================================
-	// 19. Verify every attendee got exactly one
+	// 20. Verify every attendee got exactly one
 	// ==================================================
 
 	for _, attendeeID := range attendeeIDs {
@@ -641,7 +720,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	)
 
 	// ==================================================
-	// 20. Verify audit log
+	// 21. Verify audit log
 	// ==================================================
 
 	var auditCount int
@@ -656,7 +735,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 		  AND entity = 'event'
 		  AND entity_id = $2
 		`,
-		ownerID,
+		adminID,
 		strconv.FormatInt(eventID, 10),
 	).Scan(&auditCount)
 

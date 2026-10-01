@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
+
 func TestRegisterEventAPI(t *testing.T) {
 
 	ctx := context.Background()
@@ -201,10 +202,11 @@ func TestRegisterEventAPI(t *testing.T) {
 	// --------------------------------------------------
 
 	claims := jwt.MapClaims{
-		"user_id": userID,
-		"email":   "integration@test.com",
-		"role":    "user",
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":      userID,
+		"email":        "integration@test.com",
+		"role":         "user",
+		"auth_version": 1,
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(
@@ -225,11 +227,6 @@ func TestRegisterEventAPI(t *testing.T) {
 	// --------------------------------------------------
 
 	url := "/api/v1/events/" +
-		int64ToString(eventID) +
-		"/register"
-
-	// Simpler event ID URL construction
-	url = "/api/v1/events/" +
 		int64ToString(eventID) +
 		"/register"
 

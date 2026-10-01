@@ -356,6 +356,7 @@ func TestPaginationEndpoints(t *testing.T) {
 			"user_id": userID,
 			"email":   "pagination-user@test.com",
 			"role":    "user",
+			"auth_version": 1,
 			"exp":     time.Now().
 				Add(time.Hour).
 				Unix(),
