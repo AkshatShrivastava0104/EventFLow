@@ -5,14 +5,12 @@ FROM golang:1.25.5-bookworm AS builder
 
 WORKDIR /app
 
-# Download dependencies first for better Docker layer caching
 COPY go.mod go.sum ./
+
 RUN go mod download
 
-# Copy backend source
 COPY . .
 
-# Build API binary
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build \
     -trimpath \
@@ -20,22 +18,21 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     -o /app/eventflow-api \
     ./cmd/api
 
-
 # ================================
 # Stage 2: Production
 # ================================
 FROM debian:bookworm-slim
 
-LABEL org.opencontainers.image.source="https://github.com/AkshatShrivastava0104/EventFLow"
+LABEL org.opencontainers.image.source="https://github.com/AkshatShrivastava0104/EventFlow"
 
 WORKDIR /app
 
-# CA certificates are required for outbound HTTPS calls
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root application user
 RUN useradd \
     --system \
     --create-home \
@@ -43,13 +40,10 @@ RUN useradd \
     --shell /usr/sbin/nologin \
     eventflow
 
-# Copy only the compiled application
 COPY --from=builder /app/eventflow-api /app/eventflow-api
 
-# Application runs as non-root
 USER eventflow
 
-# The Go server listens on 8080 inside the container
 EXPOSE 8080
 
 ENTRYPOINT ["/app/eventflow-api"]
