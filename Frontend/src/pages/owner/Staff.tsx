@@ -117,7 +117,7 @@ export function StaffPage() {
 
       return StaffAPI.create(orgId, {
         user_id: userId,
-        role: form.role,
+        role: form.role.toLowerCase() as 'admin' | 'staff',
       });
     },
 
@@ -171,7 +171,7 @@ export function StaffPage() {
       return StaffAPI.update(
         orgId,
         userId,
-        { role }
+        { role: role.toLowerCase() as 'admin' | 'staff' }
       );
     },
 

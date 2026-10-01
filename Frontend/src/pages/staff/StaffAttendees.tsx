@@ -199,12 +199,12 @@ export function StaffAttendees() {
 
                                         <td className="px-5 py-4">
                                             <Badge
-                                                variant={
+                                                tone={
                                                     attendee.checkedIn === attendee.tickets
-                                                        ? 'success'
+                                                        ? 'green'
                                                         : attendee.checkedIn > 0
-                                                            ? 'warning'
-                                                            : 'neutral'
+                                                            ? 'orange'
+                                                            : 'gray'
                                                 }
                                             >
                                                 {attendee.checkedIn}/{attendee.tickets} checked in

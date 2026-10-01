@@ -125,7 +125,7 @@ export interface Organization {
 export interface StaffMember {
   id: number;
   org_id: number;
-  user_id: string;
+  user_id: number;
   user_email: string;
   user_name: string;
 

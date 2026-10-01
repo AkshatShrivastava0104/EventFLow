@@ -22,6 +22,7 @@ jobs:
           POSTGRES_DB: eventflow_test
         ports:
           - 5432:5432
+        
         options: >-
           --health-cmd "pg_isready -U postgres -d eventflow_test"
           --health-interval 5s
@@ -58,11 +59,6 @@ jobs:
       REDIS_HOST: localhost
       REDIS_PORT: 6379
 
-      APP_NAME: EventFlow
-      APP_ENV: test
-      PORT: 8080
-      JWT_SECRET: test-secret-key
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,11 +73,6 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Install PostgreSQL client
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-
       - name: Install golang-migrate
         run: |
           curl -L \
@@ -93,30 +84,6 @@ jobs:
           sudo mv /tmp/migrate /usr/local/bin/migrate
 
           migrate -version
-
-      - name: Wait for PostgreSQL
-        run: |
-          until pg_isready \
-            -h localhost \
-            -p 5432 \
-            -U postgres \
-            -d eventflow_test; do
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-
-      - name: Wait for Redis
-        run: |
-          until docker run --rm \
-            --network host \
-            redis:7-alpine \
-            redis-cli \
-            -h localhost \
-            -p 6379 \
-            ping | grep -q PONG; do
-            echo "Waiting for Redis..."
-            sleep 2
-          done
 
       - name: Run database migrations
         run: |
@@ -144,31 +111,8 @@ jobs:
             -p 6379 \
             ping
 
-      - name: Run router tests
-        run: |
-          go clean -testcache
-          set -o pipefail
-          go test -count=1 -p 1 ./internal/router -v 2>&1 | tee router-test-output.txt
-
-      - name: Show router test failures
-        if: failure()
-        run: |
-          echo "========== ROUTER TEST FAILURES =========="
-          grep -B 5 -A 15 -E -- "--- FAIL:|FAIL:|Error:|expected .* got" router-test-output.txt || true
-          echo "=========================================="
-
-      - name: Upload router test output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: router-test-output
-          path: Backend/router-test-output.txt
-          if-no-files-found: warn
-
-      - name: Run all backend tests
-        run: |
-          go clean -testcache
-          go test -count=1 -p 1 ./... -v
+      - name: Run tests
+        run: go test -p 1 ./...
 
       - name: Build Go binary
         run: |

@@ -181,19 +181,9 @@ export function PublicLayout() {
     refetchInterval: 30_000,
   });
 
-  const notificationList = Array.isArray(notifs)
-    ? notifs
-    : Array.isArray((notifs as any)?.data)
-      ? (notifs as any).data
-      : Array.isArray(
-        (notifs as any)?.notifications
-      )
-        ? (notifs as any).notifications
-        : [];
-
-  const unread = notificationList.filter(
+  const unread = (notifs ?? []).filter(
     (notification) =>
-      notification.status === 'unread'
+      !notification.read
   ).length;
 
   /*

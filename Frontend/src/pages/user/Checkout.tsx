@@ -43,7 +43,7 @@ export function CheckoutPage() {
       const paid = await PaymentsAPI.confirm({ order_id: intent.order_id, card });
       const { registration } = await RegistrationsAPI.create({
         event_id: event.id,
-        user_id: user.id,
+        user_id: String(user.id),
         user_name: checkout.name,
         user_email: checkout.email,
         user_phone: checkout.phone,
