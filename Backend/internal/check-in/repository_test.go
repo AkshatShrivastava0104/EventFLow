@@ -6,14 +6,12 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestCheckInConcurrency(t *testing.T) {
-
 	ctx := context.Background()
 
 	// ==================================================
@@ -180,32 +178,6 @@ func TestCheckInConcurrency(t *testing.T) {
 		)
 	}
 
-	_, err = db.Exec(
-		ctx,
-		`
-		INSERT INTO organization_members (
-			organization_id,
-			user_id,
-			role
-		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		ON CONFLICT DO NOTHING
-		`,
-		organizationID,
-		volunteerID,
-	)
-
-	if err != nil {
-		t.Fatalf(
-			"failed to create owner membership: %v",
-			err,
-		)
-	}
-
 	// ==================================================
 	// 6. Event
 	// ==================================================
@@ -347,9 +319,7 @@ func TestCheckInConcurrency(t *testing.T) {
 	var mu sync.Mutex
 
 	for i := 0; i < attempts; i++ {
-
 		go func(attempt int) {
-
 			defer wg.Done()
 
 			checkinID, err := repo.CheckIn(
@@ -363,7 +333,6 @@ func TestCheckInConcurrency(t *testing.T) {
 			defer mu.Unlock()
 
 			if err == nil {
-
 				if checkinID <= 0 {
 					unexpectedErrors++
 
@@ -386,6 +355,7 @@ func TestCheckInConcurrency(t *testing.T) {
 				apperrors.ErrConflict,
 			) {
 				conflictCount++
+
 				return
 			}
 
@@ -396,7 +366,6 @@ func TestCheckInConcurrency(t *testing.T) {
 				attempt,
 				err,
 			)
-
 		}(i)
 	}
 
@@ -472,8 +441,4 @@ func TestCheckInConcurrency(t *testing.T) {
 		successCount,
 		conflictCount,
 	)
-
-	// Silence unused time import if the repository
-	// changes in the future and retries are removed.
-	_ = time.Second
 }

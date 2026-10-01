@@ -249,29 +249,6 @@ func TestCancelRegistrationPromotesWaitlistedUser(t *testing.T) {
 		t.Fatalf("failed to create organization: %v", err)
 	}
 
-	_, err = db.Exec(
-		ctx,
-		`
-		INSERT INTO organization_members (
-			organization_id,
-			user_id,
-			role
-		)
-		VALUES (
-			$1,
-			$2,
-			'OWNER'
-		)
-		ON CONFLICT DO NOTHING
-		`,
-		organizationID,
-		userAID,
-	)
-
-	if err != nil {
-		t.Fatalf("failed to create owner membership: %v", err)
-	}
-
 	// ==================================================
 	// 11. Event
 	// ==================================================
@@ -388,11 +365,11 @@ func TestCancelRegistrationPromotesWaitlistedUser(t *testing.T) {
 	// ==================================================
 
 	claims := jwt.MapClaims{
-		"user_id": userAID,
-		"email":   "promotion-a@test.com",
-		"role":    "user",
-			"auth_version": 1,
-		"exp":     time.Now().Add(time.Hour).Unix(),
+		"user_id":      userAID,
+		"email":        "promotion-a@test.com",
+		"role":         "user",
+		"auth_version": 1,
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(
