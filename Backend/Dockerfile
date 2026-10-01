@@ -26,6 +26,8 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 # ================================
 FROM debian:bookworm-slim
 
+LABEL org.opencontainers.image.source="https://github.com/AkshatShrivastava0104/EventFLow"
+
 WORKDIR /app
 
 # CA certificates are required for outbound HTTPS calls
