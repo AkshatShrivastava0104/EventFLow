@@ -119,7 +119,7 @@ r.Use(cors.New(cors.Config{
 	AllowOrigins: []string{
 		"http://localhost:5173",
 		"http://localhost:4173",
-		"http://localhost:3000",
+		"http://localhost:3000",`r`n                "https://eventflowak.vercel.app",
 	},
 	AllowMethods: []string{
 		"GET",
@@ -206,3 +206,4 @@ r.Use(cors.New(cors.Config{
 
 	log.Println("Application shutdown complete")
 }
+
