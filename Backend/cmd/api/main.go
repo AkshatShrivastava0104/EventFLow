@@ -29,7 +29,6 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/router"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/worker"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -113,35 +112,6 @@ func main() {
 		cfg,
 		redisClient.Client,
 	)
-
-	// Add CORS middleware to the returned router.
-	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:5173",
-			"http://localhost:4173",
-			"http://localhost:3000",
-			"https://eventflowak.vercel.app",
-		},
-		AllowMethods: []string{
-			"GET",
-			"POST",
-			"PUT",
-			"PATCH",
-			"DELETE",
-			"OPTIONS",
-		},
-		AllowHeaders: []string{
-			"Origin",
-			"Content-Type",
-			"Authorization",
-			"Accept",
-		},
-		ExposeHeaders: []string{
-			"Content-Length",
-		},
-		AllowCredentials: true,
-		MaxAge:           12 * time.Hour,
-	}))
 
 	// ==================================================
 	// HTTP Server

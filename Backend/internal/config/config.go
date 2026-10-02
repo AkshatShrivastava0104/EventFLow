@@ -20,7 +20,8 @@ type Config struct {
 	RedisHost string
 	RedisPort string
 
-	JWTSecret string
+	JWTSecret          string
+	CORSAllowedOrigins string
 }
 
 func Load() (*Config, error) {
@@ -30,17 +31,18 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		AppName:    os.Getenv("APP_NAME"),
-		AppEnv:     os.Getenv("APP_ENV"),
-		Port:       os.Getenv("PORT"),
-		DBHost:     os.Getenv("DB_HOST"),
-		DBPort:     os.Getenv("DB_PORT"),
-		DBUser:     os.Getenv("DB_USER"),
-		DBPassword: os.Getenv("DB_PASSWORD"),
-		DBName:     os.Getenv("DB_NAME"),
-		RedisHost:  os.Getenv("REDIS_HOST"),
-		RedisPort:  os.Getenv("REDIS_PORT"),
-		JWTSecret:  os.Getenv("JWT_SECRET"),
+		AppName:            os.Getenv("APP_NAME"),
+		AppEnv:             os.Getenv("APP_ENV"),
+		Port:               os.Getenv("PORT"),
+		DBHost:             os.Getenv("DB_HOST"),
+		DBPort:             os.Getenv("DB_PORT"),
+		DBUser:             os.Getenv("DB_USER"),
+		DBPassword:         os.Getenv("DB_PASSWORD"),
+		DBName:             os.Getenv("DB_NAME"),
+		RedisHost:          os.Getenv("REDIS_HOST"),
+		RedisPort:          os.Getenv("REDIS_PORT"),
+		JWTSecret:          os.Getenv("JWT_SECRET"),
+		CORSAllowedOrigins: os.Getenv("CORS_ALLOWED_ORIGINS"),
 	}
 
 	return cfg, nil

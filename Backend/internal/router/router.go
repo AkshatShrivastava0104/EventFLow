@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/admin"
@@ -45,14 +46,22 @@ func SetupRouter(
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
 
+	allowedOrigins := []string{
+		"http://localhost:5173",
+		"http://127.0.0.1:5173",
+		"http://localhost:4173",
+		"http://127.0.0.1:4173",
+		"https://eventflowak.vercel.app",
+		"https://event-f-epvryad4x-akumar-be22-thaparedus-projects.vercel.app",
+	}
+	for _, origin := range strings.Split(cfg.CORSAllowedOrigins, ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			allowedOrigins = append(allowedOrigins, origin)
+		}
+	}
+
 	r.Use(cors.New(cors.Config{
-		AllowOrigins: []string{
-			"http://localhost:5173",
-			"http://127.0.0.1:5173",
-			"http://localhost:4173",
-			"http://127.0.0.1:4173",
-			"https://eventflowak.vercel.app",
-		},
+		AllowOrigins: allowedOrigins,
 		AllowMethods: []string{
 			"GET",
 			"POST",
