@@ -50,7 +50,8 @@ func SetupRouter(
 			"http://localhost:5173",
 			"http://127.0.0.1:5173",
 			"http://localhost:4173",
-			"http://127.0.0.1:4173",`r`n                        "https://eventflowak.vercel.app",
+			"http://127.0.0.1:4173",
+			"https://eventflowak.vercel.app",
 		},
 		AllowMethods: []string{
 			"GET",

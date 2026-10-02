@@ -101,46 +101,47 @@ func main() {
 	// Gin router (single, CORS-aware)
 	// ==================================================
 	// ==================================================
-// Gin router
-// ==================================================
+	// Gin router
+	// ==================================================
 
-gin.SetMode(gin.ReleaseMode)
+	gin.SetMode(gin.ReleaseMode)
 
-// SetupRouter creates and returns the actual Gin engine
-// containing all EventFlow routes.
-r := router.SetupRouter(
-	db,
-	cfg,
-	redisClient.Client,
-)
+	// SetupRouter creates and returns the actual Gin engine
+	// containing all EventFlow routes.
+	r := router.SetupRouter(
+		db,
+		cfg,
+		redisClient.Client,
+	)
 
-// Add CORS middleware to the returned router.
-r.Use(cors.New(cors.Config{
-	AllowOrigins: []string{
-		"http://localhost:5173",
-		"http://localhost:4173",
-		"http://localhost:3000",`r`n                "https://eventflowak.vercel.app",
-	},
-	AllowMethods: []string{
-		"GET",
-		"POST",
-		"PUT",
-		"PATCH",
-		"DELETE",
-		"OPTIONS",
-	},
-	AllowHeaders: []string{
-		"Origin",
-		"Content-Type",
-		"Authorization",
-		"Accept",
-	},
-	ExposeHeaders: []string{
-		"Content-Length",
-	},
-	AllowCredentials: true,
-	MaxAge: 12 * time.Hour,
-}))
+	// Add CORS middleware to the returned router.
+	r.Use(cors.New(cors.Config{
+		AllowOrigins: []string{
+			"http://localhost:5173",
+			"http://localhost:4173",
+			"http://localhost:3000",
+			"https://eventflowak.vercel.app",
+		},
+		AllowMethods: []string{
+			"GET",
+			"POST",
+			"PUT",
+			"PATCH",
+			"DELETE",
+			"OPTIONS",
+		},
+		AllowHeaders: []string{
+			"Origin",
+			"Content-Type",
+			"Authorization",
+			"Accept",
+		},
+		ExposeHeaders: []string{
+			"Content-Length",
+		},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// ==================================================
 	// HTTP Server
@@ -206,4 +207,3 @@ r.Use(cors.New(cors.Config{
 
 	log.Println("Application shutdown complete")
 }
-
