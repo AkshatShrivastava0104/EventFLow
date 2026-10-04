@@ -61,6 +61,8 @@ function normalizeEvent(event: any): EventItem {
   return {
     ...event,
 
+    currency: 'INR',
+
     start_at:
       event?.start_at ??
       event?.start_time ??
@@ -1146,67 +1148,36 @@ export const StatsAPI = {
    ========================================================= */
 
 export const PaymentsAPI = {
-  /*
-   * IMPORTANT:
-   * These are still frontend-only mock payments.
-   * They are NOT connected to Razorpay/Stripe/Go backend yet.
-   *
-   * Keep temporarily so existing payment UI does not break.
-   */
-
   createIntent: async (payload: {
-    amount: number;
-    currency: string;
-    event_id: number;
+    purpose?: 'event' | 'subscription';
+    event_id?: number;
+    quantity?: number;
+    organization_name?: string;
   }) => {
-    await new Promise((resolve) =>
-      setTimeout(resolve, 800),
+    const response = await api.post(
+      '/payments/intents',
+      payload,
     );
-
-    return {
-      order_id:
-        'ord_' +
-        Math.random()
-          .toString(36)
-          .slice(2, 12),
-
-      client_secret:
-        'sec_' +
-        Math.random()
-          .toString(36)
-          .slice(2, 20),
-
-      ...payload,
-    };
+    return response.data;
   },
 
   confirm: async (payload: {
     order_id: string;
-    card?: string;
+    test_card_last_four: string;
   }) => {
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1400),
+    const response = await api.post(
+      `/payments/intents/${encodeURIComponent(payload.order_id)}/confirm`,
+      { test_card_last_four: payload.test_card_last_four },
     );
+    return response.data;
+  },
 
-    if (
-      payload.card &&
-      payload.card
-        .replace(/\s/g, '')
-        .endsWith('0002')
-    ) {
-      throw new Error(
-        'Card declined. Try a different payment method.',
-      );
-    }
-
-    return {
-      payment_id:
-        'pay_' +
-        Math.random()
-          .toString(36)
-          .slice(2, 14),
-
-      status: 'succeeded',
-    };
+  organization: async (
+    organizationId: number | string,
+  ) => {
+    const response = await api.get(
+      `/organizations/${organizationId}/payments`,
+    );
+    return response.data;
   },
 };

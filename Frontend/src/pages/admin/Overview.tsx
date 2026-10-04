@@ -27,6 +27,7 @@ import { Badge } from '../../components/ui/Badge';
 
 import { fmtDate } from '../../lib/utils';
 import { resolveMediaUrl } from '../../lib/api';
+import { RevenueChart } from '../../components/admin/RevenueChart';
 
 export function AdminOverview() {
     /*
@@ -45,6 +46,9 @@ export function AdminOverview() {
     });
 
     const organization = organizations[0];
+    const organizationId = organization?.id
+        ? String(organization.id)
+        : '';
 
     /*
      * ============================================================
@@ -340,6 +344,10 @@ export function AdminOverview() {
                     }
                 />
             </div>
+
+            {organizationId && (
+                <RevenueChart organizationId={organizationId} />
+            )}
 
             {/* ======================================================
           MEMBERS + REGISTRATIONS

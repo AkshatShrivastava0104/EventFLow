@@ -14,6 +14,7 @@ import {
     Bell,
     Settings,
     ShieldCheck,
+    CreditCard,
 } from 'lucide-react';
 
 export function AdminLayout() {
@@ -61,6 +62,13 @@ export function AdminLayout() {
                     label: 'Analytics',
                     icon: (
                         <BarChart3 className="h-4 w-4" />
+                    ),
+                },
+                {
+                    to: '/admin/payments',
+                    label: 'Payments',
+                    icon: (
+                        <CreditCard className="h-4 w-4" />
                     ),
                 },
             ],

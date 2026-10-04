@@ -25,7 +25,7 @@ export function OrganizersLanding() {
     },
     {
       name: 'Growth',
-      price: '$79 /mo',
+      price: '₹6,499 /mo',
       desc: 'For clubs & studios',
       highlight: true,
       features: [
@@ -73,10 +73,10 @@ export function OrganizersLanding() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                to="/register"
+                to="/organizers/start?plan=starter"
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-ink-900 px-6 font-semibold text-white"
               >
-                Start free
+                {role === 'user' ? 'Become an organizer' : 'Start free'}
                 <ArrowRight className="h-4 w-4" />
               </Link>
 
@@ -203,15 +203,25 @@ export function OrganizersLanding() {
                 ))}
               </ul>
 
-              <Link
-                to="/register"
-                className={`mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl font-semibold ${t.highlight
-                    ? 'bg-brand-500 text-white hover:bg-brand-600'
-                    : 'bg-ink-900 text-white hover:bg-ink-800'
-                  }`}
-              >
-                Get started
-              </Link>
+              {t.name === 'Enterprise' ? (
+                <button
+                  type="button"
+                  disabled
+                  className="mt-6 inline-flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-ink-100 font-semibold text-ink-500"
+                >
+                  Coming soon
+                </button>
+              ) : (
+                <Link
+                  to={`/organizers/start?plan=${t.name === 'Growth' ? 'growth' : 'starter'}`}
+                  className={`mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl font-semibold ${t.highlight
+                      ? 'bg-brand-500 text-white hover:bg-brand-600'
+                      : 'bg-ink-900 text-white hover:bg-ink-800'
+                    }`}
+                >
+                  {t.name === 'Growth' ? 'Choose Growth' : 'Start free'}
+                </Link>
+              )}
             </div>
           ))}
         </div>

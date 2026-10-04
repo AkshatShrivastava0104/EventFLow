@@ -365,14 +365,7 @@ export function RegisterEvent() {
                     <p className="font-display text-lg font-semibold">
                       {isFree
                         ? 'Free'
-                        : fmtMoney(
-                          tt === 'VIP'
-                            ? Number(event.price) *
-                            2
-                            : Number(event.price),
-                          (event as any)
-                            .currency || 'INR',
-                        )}
+                        : fmtMoney(Number(event.price))}
                     </p>
                   </label>
                 ),
@@ -534,16 +527,6 @@ export function OrderSummary({
   total,
   isFree,
 }: any) {
-  const feeRate = 0.03;
-  const fees = isFree
-    ? 0
-    : total * feeRate;
-
-  const grand = total + fees;
-
-  const currency =
-    event?.currency || 'INR';
-
   const mediaUrl = resolveMediaUrl(
     event?.cover_image ||
     event?.cover_media_url ||
@@ -581,22 +564,9 @@ export function OrderSummary({
           value={
             isFree
               ? 'Free'
-              : fmtMoney(
-                total,
-                currency,
-              )
+              : fmtMoney(total)
           }
         />
-
-        {!isFree && (
-          <Row
-            label="Service fee (3%)"
-            value={fmtMoney(
-              fees,
-              currency,
-            )}
-          />
-        )}
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-ink-100 pt-4">
@@ -607,18 +577,14 @@ export function OrderSummary({
         <p className="font-display text-2xl font-semibold">
           {isFree
             ? 'Free'
-            : fmtMoney(
-              grand,
-              currency,
-            )}
+            : fmtMoney(total)}
         </p>
       </div>
 
       <div className="mt-3 flex items-center gap-2 rounded-lg bg-ink-50 p-2.5 text-xs text-ink-600">
         <ShieldCheck className="h-4 w-4 text-brand-600" />
 
-        100% secure payments • Refundable
-        up to 24h
+        Sandbox payment simulation · No real charges
       </div>
     </aside>
   );

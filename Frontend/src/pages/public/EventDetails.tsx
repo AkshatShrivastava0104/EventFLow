@@ -320,7 +320,7 @@ export function EventDetails() {
 
               <p className="mt-1 text-xs text-ink-500">
                 {event.price > 0
-                  ? 'Payment will be available soon'
+                  ? 'Complete payment securely in the INR sandbox checkout'
                   : 'RSVP required'}
               </p>
             </div>

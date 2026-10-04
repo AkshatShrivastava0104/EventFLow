@@ -27,6 +27,7 @@ import { MyRegistrations } from './pages/user/MyRegistrations';
 import { TicketPage } from './pages/user/TicketPage';
 import { Notifications } from './pages/user/Notifications';
 import { Profile } from './pages/user/Profile';
+import { OrganizerStart } from './pages/user/OrganizerStart';
 
 // Platform Owner
 import { OwnerOverview } from './pages/owner/Overview';
@@ -53,6 +54,7 @@ import ActivityLogs from './pages/owner/ActivityLogs';
 import SystemHealth from './pages/owner/SystemHealth';
 import { Notifications as OwnerNotifications } from './pages/owner/Notification';
 import { Notifications as NotificationsAdmin } from './pages/admin/Notifications';
+import { AdminPayments } from './pages/admin/Payments';
 
 // Organization Admin
 import { AdminOverview } from './pages/admin/Overview';
@@ -94,6 +96,15 @@ export default function App() {
         <Route
           path="/organizers"
           element={<OrganizersLanding />}
+        />
+
+        <Route
+          path="/organizers/start"
+          element={
+            <ProtectedRoute roles={['user']}>
+              <OrganizerStart />
+            </ProtectedRoute>
+          }
         />
 
         {/* Authentication */}
@@ -369,6 +380,11 @@ export default function App() {
         <Route
           path="analytics"
           element={<AdminAnalytics />}
+        />
+
+        <Route
+          path="payments"
+          element={<AdminPayments />}
         />
 
         <Route

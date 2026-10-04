@@ -15,7 +15,7 @@ type Service struct {
 	eventService        *event.Service
 	organizationService *organization.Service
 	waitlistService     *waitlist.Service
-	notificationQueue    *queue.NotificationQueue
+	notificationQueue   *queue.NotificationQueue
 }
 
 func NewService(
@@ -38,6 +38,8 @@ func (s *Service) Register(
 	ctx context.Context,
 	eventID int64,
 	userID int64,
+	paymentID string,
+	quantity int,
 ) (*RegisterResult, error) {
 
 	_, err := s.eventService.GetEventForRegistration(
@@ -53,12 +55,10 @@ func (s *Service) Register(
 		ctx,
 		eventID,
 		userID,
+		paymentID,
+		quantity,
 	)
 }
-
-
-
-
 
 func (s *Service) GetMyRegistrations(
 	ctx context.Context,
@@ -95,9 +95,6 @@ func (s *Service) GetMyRegistrations(
 	}, nil
 }
 
-
-
-
 func (s *Service) CancelRegistration(
 	ctx context.Context,
 	registrationID int64,
@@ -120,9 +117,6 @@ func (s *Service) CancelRegistration(
 		eventID,
 	)
 }
-
-
-
 
 func (s *Service) GetEventRegistrations(
 	ctx context.Context,

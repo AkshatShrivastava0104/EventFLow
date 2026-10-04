@@ -13,6 +13,30 @@ on:
       - frontend/role-based-dashboards
 
 jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: Frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
   test-and-build:
     runs-on: ubuntu-latest
 
@@ -114,7 +138,10 @@ jobs:
             -p 6379 \
             ping
 
-      - name: Run tests
+      - name: Run payment and registration tests
+        run: go test -p 1 ./internal/payment ./internal/registration
+
+      - name: Run full backend test suite
         run: go test -p 1 ./...
 
       - name: Build Go binary
@@ -131,7 +158,7 @@ jobs:
         run: docker build -t eventflow-api:ci .
 
   publish-image:
-    needs: test-and-build
+    needs: [test-and-build, frontend-build]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:

@@ -34,6 +34,7 @@ import {
 import { StatCard } from '../../components/ui/StatCard';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { fmtDate } from '../../lib/utils';
+import { RevenueChart } from '../../components/admin/RevenueChart';
 
 export function Analytics() {
     const [selectedRange, setSelectedRange] =
@@ -782,6 +783,10 @@ export function Analytics() {
                     </div>
                 </div>
             </div>
+
+            {activeOrganizationId && (
+                <RevenueChart organizationId={activeOrganizationId} />
+            )}
 
             {/* ======================================================
           Event Status + Attendance

@@ -54,11 +54,29 @@ func (h *Handler) Register(c *gin.Context) {
 		return
 	}
 
+	var request struct {
+		PaymentID string `json:"payment_id"`
+		Quantity  int    `json:"quantity"`
+	}
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&request); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid request body",
+			})
+			return
+		}
+	}
+	if request.Quantity == 0 {
+		request.Quantity = 1
+	}
+
 	// Register / automatically waitlist
 	result, err := h.service.Register(
 		c.Request.Context(),
 		eventID,
 		userID,
+		request.PaymentID,
+		request.Quantity,
 	)
 
 	// IMPORTANT:
@@ -94,6 +112,24 @@ func (h *Handler) Register(c *gin.Context) {
 		case errors.Is(err, apperrors.ErrEventNotPublished):
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "registrations are only allowed for published events",
+			})
+			return
+
+		case errors.Is(err, apperrors.ErrPaymentRequired):
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error": "a successful payment for this event is required",
+			})
+			return
+
+		case errors.Is(err, apperrors.ErrEventFull):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "event capacity was reached while payment was processing",
+			})
+			return
+
+		case errors.Is(err, apperrors.ErrInvalidInput):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "quantity must be between 1 and 10",
 			})
 			return
 
@@ -157,8 +193,6 @@ func (h *Handler) Register(c *gin.Context) {
 		"error": "unknown registration result",
 	})
 }
-
-
 
 func (h *Handler) GetMyRegistrations(c *gin.Context) {
 
@@ -238,12 +272,6 @@ func (h *Handler) GetMyRegistrations(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
-
-
-
-
-
-
 func (h *Handler) CancelRegistration(c *gin.Context) {
 
 	userIDValue, exists := c.Get("user_id")
@@ -301,9 +329,6 @@ func (h *Handler) CancelRegistration(c *gin.Context) {
 		"message": "registration cancelled successfully",
 	})
 }
-
-
-
 
 func (h *Handler) GetEventRegistrations(c *gin.Context) {
 

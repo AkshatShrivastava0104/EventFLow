@@ -25,10 +25,10 @@ export function fmtRelative(d: string | Date): string {
   return formatDistanceToNow(date, { addSuffix: true });
 }
 
-export function fmtMoney(value: number | string | null | undefined, currency = 'USD'): string {
+export function fmtMoney(value: number | string | null | undefined, currency = 'INR'): string {
   const n = typeof value === 'string' ? parseFloat(value) : value ?? 0;
   if (!n) return 'Free';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(n);
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency }).format(n);
 }
 
 export function eventStatusLabel(status: string, startAt: string, endAt: string) {

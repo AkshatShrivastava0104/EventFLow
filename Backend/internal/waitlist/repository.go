@@ -30,23 +30,23 @@ func NewRepository(
 
 // OwnerWaitlistItem is the platform-owner view of a waitlist entry.
 type OwnerWaitlistItem struct {
-	ID                  int64
-	UserID              int64
-	UserName            string
-	UserEmail           string
-	EventID             int64
-	EventTitle          string
-	OrganizationID      int64
-	OrganizationName    string
-	Position            int
-	CreatedAt           time.Time
-	EventCapacity       *int
-	RegisteredCount     int
-	AvailableSpots      *int
-	EventStartTime      *time.Time
-	EventEndTime        *time.Time
-	EventStatus         string
-	RegistrationStatus  string
+	ID                    int64
+	UserID                int64
+	UserName              string
+	UserEmail             string
+	EventID               int64
+	EventTitle            string
+	OrganizationID        int64
+	OrganizationName      string
+	Position              int
+	CreatedAt             time.Time
+	EventCapacity         *int
+	RegisteredCount       int
+	AvailableSpots        *int
+	EventStartTime        *time.Time
+	EventEndTime          *time.Time
+	EventStatus           string
+	RegistrationStatus    string
 	HasActiveRegistration bool
 }
 
@@ -222,7 +222,7 @@ func (r *Repository) ListOwnerWaitlist(
 			LIMIT 1
 		) active_registration ON TRUE
 		LEFT JOIN LATERAL (
-			SELECT COUNT(*)::int AS registered_count
+			SELECT COALESCE(SUM(r2.quantity), 0)::int AS registered_count
 			FROM registrations r2
 			WHERE r2.event_id = e.id
 			  AND r2.status != 'cancelled'
@@ -381,7 +381,7 @@ func (r *Repository) PromoteNextUser(
 	var activeRegistrations int
 
 	err = tx.QueryRow(ctx, `
-		SELECT COUNT(*)
+		SELECT COALESCE(SUM(quantity), 0)
 		FROM registrations
 		WHERE event_id = $1
 		  AND status != 'cancelled'
@@ -632,7 +632,7 @@ func (r *Repository) PromoteUser(
 	var activeRegistrations int
 
 	err = tx.QueryRow(ctx, `
-		SELECT COUNT(*)
+		SELECT COALESCE(SUM(quantity), 0)
 		FROM registrations
 		WHERE event_id = $1
 		  AND status != 'cancelled'

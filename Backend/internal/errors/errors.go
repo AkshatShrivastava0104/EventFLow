@@ -19,4 +19,5 @@ var (
 	ErrRegistrationDeadlinePassed = errors.New("registration deadline has passed")
 	ErrEventNotPublished          = errors.New("registrations are only allowed for published events")
 	ErrEventFull                  = errors.New("event is full")
+	ErrPaymentRequired            = errors.New("a successful payment is required")
 )

@@ -411,6 +411,10 @@ export function MyRegistrations() {
               const image = getEventImage(registration);
 
               const isCancelled = registration.status === 'cancelled';
+              const isPendingPayment =
+                registration.status === 'pending' &&
+                registration.payment_status === 'unpaid' &&
+                Number(event?.price ?? 0) > 0;
 
               const startDate = event?.start_at
                 ? new Date(event.start_at)
@@ -432,7 +436,10 @@ export function MyRegistrations() {
                 .filter(Boolean)
                 .join(', ');
 
-              const amount = Number(registration.total_amount || 0);
+              const amount = Number(
+                registration.total_amount ||
+                (Number(event?.price ?? 0) * Number(registration.quantity || 1)),
+              );
 
               return (
                 <article
@@ -580,6 +587,11 @@ export function MyRegistrations() {
                                 ticket is no longer valid.
                               </span>
                             </>
+                          ) : isPendingPayment ? (
+                            <>
+                              <CircleAlert className="h-4 w-4 shrink-0 text-amber-500" />
+                              <span>Payment is pending. Complete checkout to receive your tickets.</span>
+                            </>
                           ) : isPast ? (
                             <>
                               <CheckCircle2 className="h-4 w-4 shrink-0 text-ink-400" />
@@ -596,6 +608,17 @@ export function MyRegistrations() {
                         </div>
 
                         <div className="flex flex-wrap gap-2">
+                          {isPendingPayment && event?.id && (
+                            <Link to={`/events/${event.id}/register`}>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                rightIcon={<ArrowRight className="h-4 w-4" />}
+                              >
+                                Complete payment
+                              </Button>
+                            </Link>
+                          )}
                           <Link
                             to={`/registrations/${registration.id}/success`}
                           >

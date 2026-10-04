@@ -15,6 +15,7 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/notification"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/payment"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/stats"
@@ -286,6 +287,11 @@ func SetupRouter(
 		registrationHandler,
 		authMiddleware,
 	)
+
+	paymentRepo := payment.NewRepository(db)
+	paymentService := payment.NewService(paymentRepo)
+	paymentHandler := payment.NewHandler(paymentService)
+	payment.RegisterRoutes(api, paymentHandler, authMiddleware)
 
 	// ==================================================
 	// Ticket

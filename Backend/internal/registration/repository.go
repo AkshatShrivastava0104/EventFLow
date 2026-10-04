@@ -35,6 +35,8 @@ func (r *Repository) RegisterUser(
 	ctx context.Context,
 	eventID int64,
 	userID int64,
+	paymentID string,
+	quantity int,
 ) (*RegisterResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -47,6 +49,10 @@ func (r *Repository) RegisterUser(
 	defer func() {
 		_ = tx.Rollback(ctx)
 	}()
+
+	if quantity < 1 || quantity > 10 {
+		return nil, apperrors.ErrInvalidInput
+	}
 
 	// --------------------------------------------------
 	// 1. Lock event and fetch event details
@@ -106,9 +112,11 @@ func (r *Repository) RegisterUser(
 	// --------------------------------------------------
 
 	var existingRegistrationID int64
+	var existingRegistrationStatus string
+	var existingQuantity int
 
 	err = tx.QueryRow(ctx, `
-		SELECT id
+		SELECT id, status, quantity
 		FROM registrations
 		WHERE user_id = $1
 		  AND event_id = $2
@@ -117,13 +125,46 @@ func (r *Repository) RegisterUser(
 	`,
 		userID,
 		eventID,
-	).Scan(&existingRegistrationID)
+	).Scan(
+		&existingRegistrationID,
+		&existingRegistrationStatus,
+		&existingQuantity,
+	)
 
 	if err == nil {
-		return nil, apperrors.ErrAlreadyRegistered
+		if existingRegistrationStatus == "registered" && paymentID != "" {
+			var existingPaymentID int64
+			err = tx.QueryRow(ctx, `
+				SELECT id
+				FROM payments
+				WHERE payment_id = $1
+				  AND user_id = $2
+				  AND event_id = $3
+				  AND purpose = 'event'
+				  AND status = 'succeeded'
+				  AND registration_id = $4
+				FOR UPDATE
+			`, paymentID, userID, eventID, existingRegistrationID).Scan(&existingPaymentID)
+			if err == nil {
+				if err := tx.Commit(ctx); err != nil {
+					return nil, err
+				}
+				return &RegisterResult{
+					Status:         "registered",
+					RegistrationID: &existingRegistrationID,
+				}, nil
+			}
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return nil, err
+			}
+		}
+
+		if existingRegistrationStatus != "pending" || paymentID == "" {
+			return nil, apperrors.ErrAlreadyRegistered
+		}
 	}
 
-	if !errors.Is(err, pgx.ErrNoRows) {
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 
@@ -160,7 +201,7 @@ func (r *Repository) RegisterUser(
 		var registeredCount int
 
 		err = tx.QueryRow(ctx, `
-			SELECT COUNT(*)
+			SELECT COALESCE(SUM(quantity), 0)
 			FROM registrations
 			WHERE event_id = $1
 			  AND status != 'cancelled'
@@ -176,7 +217,15 @@ func (r *Repository) RegisterUser(
 		// 7. Event full -> waitlist
 		// --------------------------------------------------
 
-		if registeredCount >= *capacity {
+		proposedCount := registeredCount + quantity
+		if existingRegistrationID > 0 {
+			proposedCount = registeredCount - existingQuantity + quantity
+		}
+		if proposedCount > *capacity {
+			if paymentID != "" {
+				return nil, apperrors.ErrEventFull
+			}
+
 			var position int
 
 			err = tx.QueryRow(ctx, `
@@ -268,23 +317,38 @@ func (r *Repository) RegisterUser(
 	//
 	// PAID EVENT:
 	// price > 0
-	// -> paymentSuccessful() is checked
-	//
-	// payment success:
-	// -> registered
-	// -> paid
-	// -> ticket generated
-	//
-	// payment not successful:
-	// -> pending
-	// -> unpaid
-	// -> NO ticket
+	// -> a matching successful sandbox payment is required
+	// -> registered + paid + tickets generated
 	// --------------------------------------------------
 
-	paymentCompleted := true
+	paymentCompleted := price <= 0
+	var paymentRowID int64
 
 	if price > 0 {
-		paymentCompleted = paymentSuccessful()
+		if paymentID == "" {
+			return nil, apperrors.ErrPaymentRequired
+		}
+		err = tx.QueryRow(ctx, `
+			SELECT id
+			FROM payments
+			WHERE payment_id = $1
+			  AND user_id = $2
+			  AND event_id = $3
+			  AND purpose = 'event'
+			  AND status = 'succeeded'
+			  AND registration_id IS NULL
+			  AND quantity = $4
+			  AND amount = ($5::numeric * $4)
+			  AND currency = 'INR'
+			FOR UPDATE
+		`, paymentID, userID, eventID, quantity, price).Scan(&paymentRowID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, apperrors.ErrPaymentRequired
+			}
+			return nil, err
+		}
+		paymentCompleted = true
 	}
 
 	registrationStatus, paymentStatus := registrationStatusForPayment(
@@ -296,31 +360,33 @@ func (r *Repository) RegisterUser(
 	// 11. Create registration
 	// --------------------------------------------------
 
-	var registrationID int64
-
-	err = tx.QueryRow(ctx, `
-		INSERT INTO registrations (
-			user_id,
-			event_id,
-			status,
-			payment_status,
-			created_at
-		)
-		VALUES (
-			$1,
-			$2,
-			$3,
-			$4,
-			NOW()
-		)
-		RETURNING id
-	`,
-		userID,
-		eventID,
-		registrationStatus,
-		paymentStatus,
-	).Scan(&registrationID)
-
+	registrationID := existingRegistrationID
+	if existingRegistrationID > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE registrations
+			SET quantity = $1, status = $2, payment_status = $3
+			WHERE id = $4
+		`, quantity, registrationStatus, paymentStatus, existingRegistrationID)
+	} else {
+		err = tx.QueryRow(ctx, `
+			INSERT INTO registrations (
+				user_id,
+				event_id,
+				quantity,
+				status,
+				payment_status,
+				created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, NOW())
+			RETURNING id
+		`,
+			userID,
+			eventID,
+			quantity,
+			registrationStatus,
+			paymentStatus,
+		).Scan(&registrationID)
+	}
 	if err != nil {
 		if isUniqueViolation(err) {
 			return nil, apperrors.ErrAlreadyRegistered
@@ -329,40 +395,15 @@ func (r *Repository) RegisterUser(
 		return nil, err
 	}
 
-	// --------------------------------------------------
-	// 12. Paid event but payment is NOT completed
-	//
-	// Registration remains pending.
-	// No ticket is generated until payment succeeds.
-	// --------------------------------------------------
-
-	if price > 0 && !paymentCompleted {
-		_, err = r.outboxRepo.Create(
-			ctx,
-			tx,
-			"NOTIFICATION",
-			"registration",
-			strconv.FormatInt(registrationID, 10),
-			map[string]interface{}{
-				"user_id":         userID,
-				"type":            "REGISTRATION_PAYMENT_PENDING",
-				"message":         "Your registration is pending payment.",
-				"registration_id": registrationID,
-			},
-		)
-
+	if paymentRowID > 0 {
+		_, err = tx.Exec(ctx, `
+			UPDATE payments
+			SET registration_id = $1, updated_at = NOW()
+			WHERE id = $2 AND registration_id IS NULL
+		`, registrationID, paymentRowID)
 		if err != nil {
 			return nil, err
 		}
-
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
-
-		return &RegisterResult{
-			Status:         "pending",
-			RegistrationID: &registrationID,
-		}, nil
 	}
 
 	// --------------------------------------------------
@@ -377,43 +418,50 @@ func (r *Repository) RegisterUser(
 	// registered + paid
 	// --------------------------------------------------
 
-	ticketNumber, err := generateTicketNumber()
-	if err != nil {
-		return nil, err
-	}
-
-	// The QR payload uses the same unique ticket number
-	// that the existing check-in system already validates.
-	qrCode := generateQRCode(ticketNumber)
-
-	var ticketID int64
-
-	err = tx.QueryRow(ctx, `
-		INSERT INTO tickets (
-			registration_id,
-			qr_code,
-			ticket_number,
-			created_at
-		)
-		VALUES (
-			$1,
-			$2,
-			$3,
-			NOW()
-		)
-		RETURNING id
-	`,
-		registrationID,
-		qrCode,
-		ticketNumber,
-	).Scan(&ticketID)
-
-	if err != nil {
-		if isUniqueViolation(err) {
-			return nil, apperrors.ErrConflict
+	var firstTicketID int64
+	for i := 0; i < quantity; i++ {
+		ticketNumber, err := generateTicketNumber()
+		if err != nil {
+			return nil, err
 		}
-
-		return nil, err
+		qrCode := generateQRCode(ticketNumber)
+		var ticketID int64
+		err = tx.QueryRow(ctx, `
+			INSERT INTO tickets (
+				registration_id,
+				qr_code,
+				ticket_number,
+				created_at
+			)
+			VALUES ($1, $2, $3, NOW())
+			RETURNING id
+		`, registrationID, qrCode, ticketNumber).Scan(&ticketID)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return nil, apperrors.ErrConflict
+			}
+			return nil, err
+		}
+		if i == 0 {
+			firstTicketID = ticketID
+		}
+		_, err = r.outboxRepo.Create(
+			ctx,
+			tx,
+			"NOTIFICATION",
+			"ticket",
+			strconv.FormatInt(ticketID, 10),
+			map[string]interface{}{
+				"user_id":    userID,
+				"type":       "TICKET_CREATED",
+				"message":    "Your event ticket has been created successfully.",
+				"ticket_id":  ticketID,
+				"ticket_num": ticketNumber,
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// --------------------------------------------------
@@ -431,30 +479,7 @@ func (r *Repository) RegisterUser(
 			"type":            "REGISTRATION_CREATED",
 			"message":         "Your registration was created successfully.",
 			"registration_id": registrationID,
-			"ticket_id":       ticketID,
-		},
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// --------------------------------------------------
-	// 15. Ticket notification
-	// --------------------------------------------------
-
-	_, err = r.outboxRepo.Create(
-		ctx,
-		tx,
-		"NOTIFICATION",
-		"ticket",
-		strconv.FormatInt(ticketID, 10),
-		map[string]interface{}{
-			"user_id":    userID,
-			"type":       "TICKET_CREATED",
-			"message":    "Your event ticket has been created successfully.",
-			"ticket_id":  ticketID,
-			"ticket_num": ticketNumber,
+			"ticket_id":       firstTicketID,
 		},
 	)
 
@@ -475,21 +500,6 @@ func (r *Repository) RegisterUser(
 		Status:         "registered",
 		RegistrationID: &registrationID,
 	}, nil
-}
-
-// --------------------------------------------------
-// Dummy payment function
-//
-// For now:
-// false = payment not completed
-// true  = payment completed
-//
-// Later replace this function with actual payment
-// gateway verification / webhook logic.
-// --------------------------------------------------
-
-func paymentSuccessful() bool {
-	return false
 }
 
 func registrationStatusForPayment(price float64, paymentCompleted bool) (string, string) {
@@ -550,6 +560,7 @@ func (r *Repository) GetRegistrationsByUserID(
 			r.id,
 			r.user_id,
 			r.event_id,
+			r.quantity,
 			COALESCE(u.name, ''),
 			COALESCE(u.email, ''),
 			r.status,
@@ -605,6 +616,7 @@ func (r *Repository) GetRegistrationsByUserID(
 			&registration.ID,
 			&registration.UserID,
 			&registration.EventID,
+			&registration.Quantity,
 			&registration.UserName,
 			&registration.UserEmail,
 			&registration.Status,
