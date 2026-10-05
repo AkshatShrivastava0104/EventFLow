@@ -2,6 +2,7 @@ package payment
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -105,6 +106,12 @@ func (h *Handler) respondError(c *gin.Context, err error) {
 	case errors.Is(err, ErrNotEligible):
 		c.JSON(http.StatusConflict, gin.H{"error": "an organizer account already exists for this user"})
 	default:
+		log.Printf(
+			"payment request failed: method=%s route=%q error=%v",
+			c.Request.Method,
+			c.FullPath(),
+			err,
+		)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "payment request failed"})
 	}
 }

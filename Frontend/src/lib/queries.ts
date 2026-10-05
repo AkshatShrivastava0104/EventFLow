@@ -84,8 +84,8 @@ function normalizeEvent(event: any): EventItem {
       null,
 
     /*
-     * Backend stores the uploaded image path
-     * in cover_image.
+     * Backend stores the Cloudinary URL (or a
+     * legacy local path) in cover_image.
      */
     cover_image: coverImage,
 

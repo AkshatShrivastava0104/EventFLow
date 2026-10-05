@@ -3,6 +3,7 @@ package event
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/AkshatShrivastava0104/EventFlow/internal/auditlog"
@@ -218,7 +219,7 @@ func (s *Service) GetEventByID(
 	)
 	if err != nil {
 		return nil, errors.New(
-		"you are not a member of this organization",
+			"you are not a member of this organization",
 		)
 	}
 
@@ -346,6 +347,37 @@ func (s *Service) UploadEventMedia(
 		return apperrors.ErrInvalidInput
 	}
 
+	if err := s.ValidateEventMediaUpload(ctx, eventID, userID); err != nil {
+		return err
+	}
+
+	if err := s.repo.UpdateCoverImage(
+		ctx,
+		eventID,
+		mediaURL,
+	); err != nil {
+		return err
+	}
+
+	if err := s.auditService.Log(
+		ctx,
+		&userID,
+		"UPLOAD_EVENT_MEDIA",
+		"event",
+		eventID,
+		nil,
+	); err != nil {
+		return fmt.Errorf("%w: %w", ErrEventMediaAuditFailed, err)
+	}
+
+	return nil
+}
+
+func (s *Service) ValidateEventMediaUpload(
+	ctx context.Context,
+	eventID int64,
+	userID int64,
+) error {
 	eventData, err := s.repo.GetEventByID(
 		ctx,
 		eventID,
@@ -370,25 +402,6 @@ func (s *Service) UploadEventMedia(
 	if eventData.Status == "completed" ||
 		eventData.Status == "cancelled" {
 		return apperrors.ErrInvalidInput
-	}
-
-	if err := s.repo.UpdateCoverImage(
-		ctx,
-		eventID,
-		mediaURL,
-	); err != nil {
-		return err
-	}
-
-	if err := s.auditService.Log(
-		ctx,
-		&userID,
-		"UPLOAD_EVENT_MEDIA",
-		"event",
-		eventID,
-		nil,
-	); err != nil {
-		return err
 	}
 
 	return nil

@@ -46,7 +46,7 @@ export function resolveMediaUrl(
   }
 
   /*
-   * Backend currently returns:
+   * Legacy backend uploads may still return:
    *
    * /uploads/events/<filename>
    *

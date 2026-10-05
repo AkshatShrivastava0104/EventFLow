@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -85,7 +86,7 @@ func SetupRouter(
 	}))
 
 	// ==================================================
-	// Local development uploads
+	// Serve legacy local uploads created before Cloudinary was enabled.
 	// ==================================================
 
 	r.Static(
@@ -198,8 +199,19 @@ func SetupRouter(
 		auditService,
 	)
 
+	mediaUploader, err := event.NewCloudinaryMediaUploader(
+		cfg.CloudinaryCloudName,
+		cfg.CloudinaryAPIKey,
+		cfg.CloudinaryAPISecret,
+		cfg.CloudinaryUploadFolder,
+	)
+	if err != nil {
+		log.Printf("Cloudinary event media storage is unavailable: %v", err)
+	}
+
 	eventHandler := event.NewHandler(
 		eventService,
+		mediaUploader,
 	)
 
 	event.RegisterEventRoutes(

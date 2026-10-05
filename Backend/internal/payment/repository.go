@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -284,7 +285,7 @@ func (r *Repository) ListOrganizationPayments(
 		)
 	`, organizationID, userID).Scan(&isAdmin)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("check organization admin membership: %w", err)
 	}
 	if !isAdmin {
 		return nil, ErrForbidden
@@ -305,7 +306,7 @@ func (r *Repository) ListOrganizationPayments(
 		  AND p.registration_id IS NOT NULL
 	`, organizationID).Scan(&result.Revenue)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query organization payment revenue: %w", err)
 	}
 
 	rows, err := r.db.Query(ctx, `
@@ -329,19 +330,19 @@ func (r *Repository) ListOrganizationPayments(
 		ORDER BY months.month_start
 	`, organizationID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query monthly organization revenue: %w", err)
 	}
 	for rows.Next() {
 		var item MonthlyRevenue
 		if err := rows.Scan(&item.Month, &item.Revenue); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, fmt.Errorf("scan monthly organization revenue: %w", err)
 		}
 		result.MonthlyRevenue = append(result.MonthlyRevenue, item)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return nil, err
+		return nil, fmt.Errorf("iterate monthly organization revenue: %w", err)
 	}
 	rows.Close()
 
@@ -359,7 +360,7 @@ func (r *Repository) ListOrganizationPayments(
 		ORDER BY p.created_at DESC
 	`, organizationID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("query organization payment list: %w", err)
 	}
 	defer paymentRows.Close()
 
@@ -385,7 +386,7 @@ func (r *Repository) ListOrganizationPayments(
 			&item.CreatedAt,
 			&confirmedAt,
 		); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("scan organization payment: %w", err)
 		}
 		if paymentID.Valid {
 			item.PaymentID = &paymentID.String
@@ -404,7 +405,10 @@ func (r *Repository) ListOrganizationPayments(
 		}
 		result.Payments = append(result.Payments, item)
 	}
-	return result, paymentRows.Err()
+	if err := paymentRows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate organization payment list: %w", err)
+	}
+	return result, nil
 }
 
 func newIdentifier(prefix string) (string, error) {

@@ -1,11 +1,13 @@
 package event
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"io"
+	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -15,12 +17,19 @@ import (
 )
 
 type Handler struct {
-	service *Service
+	service       *Service
+	mediaUploader MediaUploader
 }
 
-func NewHandler(service *Service) *Handler {
+func NewHandler(service *Service, mediaUploader ...MediaUploader) *Handler {
+	var uploader MediaUploader
+	if len(mediaUploader) > 0 {
+		uploader = mediaUploader[0]
+	}
+
 	return &Handler{
-		service: service,
+		service:       service,
+		mediaUploader: uploader,
 	}
 }
 
@@ -332,12 +341,10 @@ func (h *Handler) UpdateEvent(c *gin.Context) {
 
 // POST /api/v1/events/:id/media
 //
-// Development storage:
-//   uploads/events/<generated-name>
-//
 // Supported:
-//   Images: jpg, jpeg, png, webp, gif
-//   Videos: mp4, webm, mov
+//
+//	Images: jpg, jpeg, png, webp, gif
+//	Videos: mp4, webm, mov
 func (h *Handler) UploadEventMedia(c *gin.Context) {
 	userIDValue, exists := c.Get("user_id")
 
@@ -370,13 +377,51 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		return
 	}
 
+	if err := h.service.ValidateEventMediaUpload(
+		c.Request.Context(),
+		eventID,
+		userID,
+	); err != nil {
+		if errors.Is(err, apperrors.ErrEventNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "you do not have permission to upload media for this event",
+			})
+			return
+		}
+
+		if errors.Is(err, apperrors.ErrInvalidInput) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "event does not accept media uploads",
+			})
+			return
+		}
+
+		log.Printf("event media authorization failed event_id=%d: %v", eventID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "failed to validate media upload",
+		})
+		return
+	}
+
+	if h.mediaUploader == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": "event media storage is not configured",
+		})
+		return
+	}
+
 	/*
 	 * Limit request body size.
 	 *
-	 * Current development limit:
+	 * Maximum upload size:
 	 * 100 MB.
-	 *
-	 * This can be changed later for production storage.
 	 */
 	const maxUploadSize = 100 << 20
 
@@ -447,10 +492,24 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		return
 	}
 
-	/*
-	 * Generate a random filename so users cannot overwrite
-	 * another event's uploaded file.
-	 */
+	uploadedFile, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "unable to read uploaded file",
+		})
+		return
+	}
+	defer uploadedFile.Close()
+
+	if detectedType, err := validateUploadedMedia(uploadedFile, extension); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	} else if detectedType != "" {
+		mediaType = detectedType
+	}
+
 	randomBytes := make([]byte, 16)
 
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -460,42 +519,34 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		return
 	}
 
-	fileName := hex.EncodeToString(randomBytes) + extension
-
-	uploadDir := filepath.Join(
-		"uploads",
-		"events",
-	)
-
-	if err := os.MkdirAll(
-		uploadDir,
-		0755,
-	); err != nil {
+	publicID := hex.EncodeToString(randomBytes)
+	if _, err := uploadedFile.Seek(0, io.SeekStart); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to create upload directory",
+			"error": "failed to process uploaded file",
 		})
 		return
 	}
 
-	filePath := filepath.Join(
-		uploadDir,
-		fileName,
+	cloudinaryResult, err := h.mediaUploader.Upload(
+		c.Request.Context(),
+		uploadedFile,
+		publicID,
+		mediaType,
 	)
-
-	if err := c.SaveUploadedFile(
-		fileHeader,
-		filePath,
-	); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "failed to save uploaded file",
+	if err != nil {
+		log.Printf("event media upload failed event_id=%d: %v", eventID, err)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "failed to upload media to storage",
 		})
 		return
 	}
-
-	/*
-	 * URL stored in the events.cover_image column.
-	 */
-	fileURL := "/uploads/events/" + fileName
+	if cloudinaryResult.SecureURL == "" || cloudinaryResult.PublicID == "" {
+		log.Printf("event media upload returned incomplete result event_id=%d", eventID)
+		c.JSON(http.StatusBadGateway, gin.H{
+			"error": "media storage returned an invalid upload result",
+		})
+		return
+	}
 
 	/*
 	 * Persist the uploaded media against the event.
@@ -506,10 +557,17 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		c.Request.Context(),
 		eventID,
 		userID,
-		fileURL,
+		cloudinaryResult.SecureURL,
 	); err != nil {
-		// Avoid leaving orphan files when DB persistence fails.
-		_ = os.Remove(filePath)
+		if !errors.Is(err, ErrEventMediaAuditFailed) {
+			if deleteErr := h.mediaUploader.Delete(
+				context.WithoutCancel(c.Request.Context()),
+				cloudinaryResult.PublicID,
+				mediaType,
+			); deleteErr != nil {
+				log.Printf("event media cleanup failed event_id=%d public_id=%s: %v", eventID, cloudinaryResult.PublicID, deleteErr)
+			}
+		}
 
 		if errors.Is(err, apperrors.ErrEventNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
@@ -540,13 +598,50 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":       "media uploaded successfully",
-		"url":            fileURL,
-		"media_url":     fileURL,
+		"url":           cloudinaryResult.SecureURL,
+		"media_url":     cloudinaryResult.SecureURL,
+		"secure_url":    cloudinaryResult.SecureURL,
+		"public_id":     cloudinaryResult.PublicID,
 		"media_type":    mediaType,
-		"file_name":     fileName,
+		"file_name":     publicID + extension,
 		"original_name": originalName,
 		"size":          fileHeader.Size,
 	})
+}
+
+func validateUploadedMedia(file io.ReadSeeker, extension string) (string, error) {
+	imageMIMETypes := map[string]string{
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".png":  "image/png",
+		".webp": "image/webp",
+		".gif":  "image/gif",
+	}
+
+	expectedMIMEType, isImage := imageMIMETypes[extension]
+	if !isImage {
+		return "video", nil
+	}
+
+	header := make([]byte, 512)
+	size, err := file.Read(header)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", errors.New("unable to read image data")
+	}
+	if size == 0 {
+		return "", errors.New("empty files are not allowed")
+	}
+
+	detectedMIMEType := strings.Split(http.DetectContentType(header[:size]), ";")[0]
+	if detectedMIMEType != expectedMIMEType {
+		return "", errors.New("file content does not match its image type")
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", errors.New("unable to read image data")
+	}
+
+	return "image", nil
 }
 
 /* =========================================================
