@@ -2,12 +2,16 @@ package payment
 
 import "time"
 
-const GrowthMonthlyPrice = 6499.00
+const (
+	ProMonthlyPrice  = 999.00
+	PlusMonthlyPrice = 2499.00
+)
 
 type CreateIntentRequest struct {
 	Purpose          string `json:"purpose"`
 	EventID          int64  `json:"event_id"`
 	Quantity         int    `json:"quantity"`
+	Plan             string `json:"plan"`
 	OrganizationName string `json:"organization_name"`
 }
 

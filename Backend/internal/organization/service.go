@@ -9,8 +9,10 @@ import (
 	apperrors "github.com/AkshatShrivastava0104/EventFlow/internal/errors"
 )
 
+var ErrPaidPlanRequired = errors.New("a paid Pro or Plus plan is required")
+
 type Service struct {
-	repo        *Repository
+	repo         *Repository
 	auditService *auditlog.Service
 }
 
@@ -46,29 +48,7 @@ func (s *Service) CreateOrganization(
 		return 0, apperrors.ErrInvalidInput
 	}
 
-	organizationID, err := s.repo.CreateOrganization(
-		ctx,
-		name,
-		description,
-		ownerID,
-	)
-
-	if err != nil {
-		return 0, err
-	}
-
-	if err := s.auditService.Log(
-		ctx,
-		&ownerID,
-		"CREATE_ORGANIZATION",
-		"organization",
-		organizationID,
-		nil,
-	); err != nil {
-		return organizationID, err
-	}
-
-	return organizationID, nil
+	return 0, ErrPaidPlanRequired
 }
 
 func (s *Service) GetOrganizations(

@@ -56,6 +56,13 @@ func (h *Handler) CreateOrganization(c *gin.Context) {
 	)
 
 	if err != nil {
+		if errors.Is(err, ErrPaidPlanRequired) {
+			c.JSON(http.StatusPaymentRequired, gin.H{
+				"error": "choose a Pro or Plus plan and complete payment to create an organization",
+			})
+			return
+		}
+
 		if errors.Is(err, apperrors.ErrInvalidInput) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "invalid organization data",

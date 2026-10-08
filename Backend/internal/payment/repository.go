@@ -57,16 +57,28 @@ func (r *Repository) CreateEventIntent(
 		return nil, ErrInvalidRequest
 	}
 
-	return r.insertIntent(ctx, userID, "event", eventID, quantity, price*float64(quantity), "")
+	return r.insertIntent(ctx, userID, "event", eventID, quantity, price*float64(quantity), "", "")
 }
 
 func (r *Repository) CreateSubscriptionIntent(
 	ctx context.Context,
 	userID int64,
+	plan string,
 	organizationName string,
 ) (*Intent, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+
+	plan = strings.ToLower(strings.TrimSpace(plan))
+	var amount float64
+	switch plan {
+	case "pro":
+		amount = ProMonthlyPrice
+	case "plus":
+		amount = PlusMonthlyPrice
+	default:
+		return nil, ErrInvalidRequest
+	}
 
 	var hasOrganization bool
 	err := r.db.QueryRow(ctx, `
@@ -83,7 +95,7 @@ func (r *Repository) CreateSubscriptionIntent(
 		return nil, ErrNotEligible
 	}
 
-	return r.insertIntent(ctx, userID, "subscription", 0, 1, GrowthMonthlyPrice, organizationName)
+	return r.insertIntent(ctx, userID, "subscription", 0, 1, amount, plan, organizationName)
 }
 
 func (r *Repository) insertIntent(
@@ -93,6 +105,7 @@ func (r *Repository) insertIntent(
 	eventID int64,
 	quantity int,
 	amount float64,
+	plan string,
 	organizationName string,
 ) (*Intent, error) {
 	orderID, err := newIdentifier("ord_")
@@ -106,11 +119,10 @@ func (r *Repository) insertIntent(
 			organization_name, quantity, amount, currency, status
 		)
 		VALUES (
-			$1, $2, NULLIF($3, 0), $4,
-			CASE WHEN $4 = 'subscription' THEN 'growth' ELSE NULL END,
-			NULLIF($5, ''), $6, $7, 'INR', 'pending'
+			$1, $2, NULLIF($3, 0), $4, NULLIF($5, ''),
+			NULLIF($6, ''), $7, $8, 'INR', 'pending'
 		)
-	`, orderID, userID, eventID, purpose, organizationName, quantity, amount)
+	`, orderID, userID, eventID, purpose, plan, organizationName, quantity, amount)
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +153,7 @@ func (r *Repository) Confirm(
 	var (
 		paymentRowID      int64
 		purpose           string
+		plan              string
 		status            string
 		organizationName  string
 		organizationID    *int64
@@ -148,7 +161,7 @@ func (r *Repository) Confirm(
 		existingPaymentID sql.NullString
 	)
 	err = tx.QueryRow(ctx, `
-		SELECT id, purpose, status, COALESCE(organization_name, ''),
+		SELECT id, purpose, COALESCE(plan, ''), status, COALESCE(organization_name, ''),
 			organization_id, registration_id, payment_id
 		FROM payments
 		WHERE order_id = $1 AND user_id = $2
@@ -156,6 +169,7 @@ func (r *Repository) Confirm(
 	`, orderID, userID).Scan(
 		&paymentRowID,
 		&purpose,
+		&plan,
 		&status,
 		&organizationName,
 		&organizationID,
@@ -234,9 +248,9 @@ func (r *Repository) Confirm(
 				owner_id, name, description, subscription_plan,
 				subscription_status, subscription_period_end, created_at, updated_at
 			)
-			VALUES ($1, $2, '', 'growth', 'active', NOW() + INTERVAL '1 month', NOW(), NOW())
+			VALUES ($1, $2, '', $3, 'active', NOW() + INTERVAL '1 month', NOW(), NOW())
 			RETURNING id
-		`, userID, organizationName).Scan(&result.OrganizationID)
+		`, userID, organizationName, plan).Scan(&result.OrganizationID)
 		if err != nil {
 			return nil, err
 		}

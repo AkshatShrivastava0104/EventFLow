@@ -1152,6 +1152,7 @@ export const PaymentsAPI = {
     purpose?: 'event' | 'subscription';
     event_id?: number;
     quantity?: number;
+    plan?: 'pro' | 'plus';
     organization_name?: string;
   }) => {
     const response = await api.post(

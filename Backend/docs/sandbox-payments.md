@@ -39,7 +39,9 @@ EventFlow's payment API is a local simulation; it does not connect to a processo
 
 ## Organizer plans
 
-Starter workspaces are free and can be created through `POST /api/v1/organizations`. Growth costs ₹6,499 per month; the sandbox simulates the first payment only and does not auto-renew. A Growth intent uses `purpose: "subscription"` and `organization_name`; a successful confirmation creates the organization and its `ADMIN` membership in the same transaction. A declined payment grants no organizer access.
+Organizer workspaces require one of two paid plans: Pro costs ₹999 per month and Plus costs ₹2,499 per month. The sandbox simulates the first payment only and does not auto-renew or move money. Create a subscription intent with `purpose: "subscription"`, `plan: "pro"` or `"plus"`, and `organization_name`, for example `{"purpose":"subscription","plan":"pro","organization_name":"Bengaluru Tech Community"}`. A successful confirmation creates the organization with its selected plan and `ADMIN` membership in the same transaction. A declined payment grants no organizer access. Direct `POST /api/v1/organizations` requests cannot create a free workspace.
+
+Apply all database migrations, including `20261004190000_create_payments_table` and `20261008180000_replace_starter_growth_plans`, before deploying the API. The payment migration creates the tables required by checkout and revenue reporting; the newer migration updates the supported subscription plan values.
 
 ## Admin payments and revenue
 

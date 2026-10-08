@@ -11,6 +11,7 @@ type paymentRepositoryStub struct {
 	eventID            int64
 	quantity           int
 	subscriptionUserID int64
+	subscriptionPlan   string
 	organizationName   string
 	confirmedUserID    int64
 	confirmedOrderID   string
@@ -33,11 +34,16 @@ func (s *paymentRepositoryStub) CreateEventIntent(
 func (s *paymentRepositoryStub) CreateSubscriptionIntent(
 	_ context.Context,
 	userID int64,
+	plan string,
 	name string,
 ) (*Intent, error) {
 	s.calls++
-	s.subscriptionUserID, s.organizationName = userID, name
-	return &Intent{OrderID: "ord_growth", Amount: GrowthMonthlyPrice, Currency: "INR", Purpose: "subscription"}, nil
+	s.subscriptionUserID, s.subscriptionPlan, s.organizationName = userID, plan, name
+	price := ProMonthlyPrice
+	if plan == "plus" {
+		price = PlusMonthlyPrice
+	}
+	return &Intent{OrderID: "ord_subscription", Amount: price, Currency: "INR", Purpose: "subscription"}, nil
 }
 
 func (s *paymentRepositoryStub) Confirm(
@@ -110,21 +116,32 @@ func TestCreateIntentSubscriptionValidation(t *testing.T) {
 
 	intent, err := service.CreateIntent(context.Background(), 8, CreateIntentRequest{
 		Purpose:          "subscription",
+		Plan:             "plus",
 		OrganizationName: "  EventFlow Test Org  ",
 	})
 	if err != nil {
 		t.Fatalf("CreateIntent subscription returned error: %v", err)
 	}
-	if intent.Amount != GrowthMonthlyPrice || intent.Currency != "INR" {
-		t.Fatalf("unexpected Growth subscription intent: %+v", intent)
+	if intent.Amount != PlusMonthlyPrice || intent.Currency != "INR" {
+		t.Fatalf("unexpected Plus subscription intent: %+v", intent)
 	}
-	if repo.subscriptionUserID != 8 || repo.organizationName != "EventFlow Test Org" {
-		t.Fatalf("repository received user=%d organization=%q", repo.subscriptionUserID, repo.organizationName)
+	if repo.subscriptionUserID != 8 || repo.subscriptionPlan != "plus" || repo.organizationName != "EventFlow Test Org" {
+		t.Fatalf("repository received user=%d plan=%q organization=%q", repo.subscriptionUserID, repo.subscriptionPlan, repo.organizationName)
+	}
+
+	proIntent, err := service.CreateIntent(context.Background(), 9, CreateIntentRequest{
+		Purpose:          "subscription",
+		Plan:             " PRO ",
+		OrganizationName: "Pro Test Workspace",
+	})
+	if err != nil || proIntent.Amount != ProMonthlyPrice || repo.subscriptionPlan != "pro" {
+		t.Fatalf("unexpected Pro subscription intent: intent=%+v plan=%q error=%v", proIntent, repo.subscriptionPlan, err)
 	}
 
 	for _, request := range []CreateIntentRequest{
 		{Purpose: "subscription"},
 		{Purpose: "subscription", OrganizationName: "Valid", Quantity: 2},
+		{Purpose: "subscription", Plan: "starter", OrganizationName: "Valid"},
 		{Purpose: "other", EventID: 42},
 	} {
 		before := repo.calls

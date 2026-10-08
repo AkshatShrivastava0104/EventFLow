@@ -13,9 +13,10 @@ export function OrganizersLanding() {
 
   const tiers = [
     {
-      name: 'Starter',
-      price: 'Free',
-      desc: 'For community meetups',
+      name: 'Pro',
+      plan: 'pro',
+      price: '₹999 /mo',
+      desc: 'For community organizers',
       features: [
         'Up to 100 attendees / event',
         'QR check-in on any device',
@@ -24,9 +25,10 @@ export function OrganizersLanding() {
       ],
     },
     {
-      name: 'Growth',
-      price: '₹6,499 /mo',
-      desc: 'For clubs & studios',
+      name: 'Plus',
+      plan: 'plus',
+      price: '₹2,499 /mo',
+      desc: 'For growing clubs & studios',
       highlight: true,
       features: [
         'Unlimited attendees',
@@ -34,18 +36,6 @@ export function OrganizersLanding() {
         'Staff roles & permissions',
         'Waitlists & discount codes',
         'Priority support',
-      ],
-    },
-    {
-      name: 'Enterprise',
-      price: 'Talk to us',
-      desc: 'For festivals & venues',
-      features: [
-        'SSO & audit logs',
-        'Dedicated CSM',
-        'On-site staff training',
-        'Custom integrations',
-        'SLA & DPA',
       ],
     },
   ];
@@ -73,10 +63,10 @@ export function OrganizersLanding() {
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
-                to="/organizers/start?plan=starter"
+                to="/organizers/start?plan=pro"
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-ink-900 px-6 font-semibold text-white"
               >
-                {role === 'user' ? 'Become an organizer' : 'Start free'}
+                {role === 'user' ? 'Become an organizer' : 'Choose a plan'}
                 <ArrowRight className="h-4 w-4" />
               </Link>
 
@@ -203,25 +193,15 @@ export function OrganizersLanding() {
                 ))}
               </ul>
 
-              {t.name === 'Enterprise' ? (
-                <button
-                  type="button"
-                  disabled
-                  className="mt-6 inline-flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-ink-100 font-semibold text-ink-500"
-                >
-                  Coming soon
-                </button>
-              ) : (
-                <Link
-                  to={`/organizers/start?plan=${t.name === 'Growth' ? 'growth' : 'starter'}`}
-                  className={`mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl font-semibold ${t.highlight
-                      ? 'bg-brand-500 text-white hover:bg-brand-600'
-                      : 'bg-ink-900 text-white hover:bg-ink-800'
-                    }`}
-                >
-                  {t.name === 'Growth' ? 'Choose Growth' : 'Start free'}
-                </Link>
-              )}
+              <Link
+                to={`/organizers/start?plan=${t.plan}`}
+                className={`mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl font-semibold ${t.highlight
+                    ? 'bg-brand-500 text-white hover:bg-brand-600'
+                    : 'bg-ink-900 text-white hover:bg-ink-800'
+                  }`}
+              >
+                Choose {t.name}
+              </Link>
             </div>
           ))}
         </div>

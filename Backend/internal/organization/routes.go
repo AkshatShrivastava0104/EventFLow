@@ -13,8 +13,7 @@ func RegisterOrganizationRoutes(
 
 	organizations.Use(authMiddleware)
 
-	// Any authenticated user can create an organization.
-	// The creator automatically becomes ADMIN.
+	// Organization creation is handled only after a paid plan checkout.
 	organizations.POST("", handler.CreateOrganization)
 
 	organizations.GET("", handler.GetOrganizations)

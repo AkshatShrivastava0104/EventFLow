@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func TestPaymentAndGrowthSubscriptionDatabaseFlow(t *testing.T) {
+func TestPaymentAndPlusSubscriptionDatabaseFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -135,17 +135,17 @@ func TestPaymentAndGrowthSubscriptionDatabaseFlow(t *testing.T) {
 		t.Fatalf("non-admin payment listing error = %v, want %v", err, ErrForbidden)
 	}
 
-	subscriberID := createPaymentUser(t, ctx, db, "growth")
-	subscriptionIntent, err := repo.CreateSubscriptionIntent(ctx, subscriberID, "Growth Test Workspace")
+	subscriberID := createPaymentUser(t, ctx, db, "plus")
+	subscriptionIntent, err := repo.CreateSubscriptionIntent(ctx, subscriberID, "plus", "Plus Test Workspace")
 	if err != nil {
-		t.Fatalf("create Growth subscription intent: %v", err)
+		t.Fatalf("create Plus subscription intent: %v", err)
 	}
-	if subscriptionIntent.Amount != GrowthMonthlyPrice || subscriptionIntent.Currency != "INR" {
+	if subscriptionIntent.Amount != PlusMonthlyPrice || subscriptionIntent.Currency != "INR" {
 		t.Fatalf("subscription intent = %+v", subscriptionIntent)
 	}
 	subscription, err := repo.Confirm(ctx, subscriberID, subscriptionIntent.OrderID, true)
 	if err != nil {
-		t.Fatalf("confirm Growth subscription: %v", err)
+		t.Fatalf("confirm Plus subscription: %v", err)
 	}
 	if subscription.Status != "succeeded" || subscription.OrganizationID == nil {
 		t.Fatalf("subscription confirmation = %+v", subscription)
@@ -158,21 +158,21 @@ func TestPaymentAndGrowthSubscriptionDatabaseFlow(t *testing.T) {
 		WHERE member.user_id = $1 AND organization.id = $2
 	`, subscriberID, *subscription.OrganizationID).Scan(&role, &plan, &status)
 	if err != nil {
-		t.Fatalf("read Growth organization membership: %v", err)
+		t.Fatalf("read Plus organization membership: %v", err)
 	}
-	if role != "ADMIN" || plan != "growth" || status != "active" {
+	if role != "ADMIN" || plan != "plus" || status != "active" {
 		t.Fatalf("membership/plan/status = %s/%s/%s", role, plan, status)
 	}
 	replayedSubscription, err := repo.Confirm(ctx, subscriberID, subscriptionIntent.OrderID, true)
 	if err != nil {
-		t.Fatalf("repeat Growth subscription confirmation: %v", err)
+		t.Fatalf("repeat Plus subscription confirmation: %v", err)
 	}
 	if replayedSubscription.OrganizationID == nil ||
 		*replayedSubscription.OrganizationID != *subscription.OrganizationID {
 		t.Fatalf("repeat subscription confirmation = %+v", replayedSubscription)
 	}
-	if _, err := repo.CreateSubscriptionIntent(ctx, subscriberID, "Second Workspace"); err != ErrNotEligible {
-		t.Fatalf("second Growth intent error = %v, want %v", err, ErrNotEligible)
+	if _, err := repo.CreateSubscriptionIntent(ctx, subscriberID, "plus", "Second Workspace"); err != ErrNotEligible {
+		t.Fatalf("second subscription intent error = %v, want %v", err, ErrNotEligible)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)

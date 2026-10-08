@@ -5,22 +5,22 @@ import { Check, CreditCard, ShieldCheck } from 'lucide-react';
 import { isAxiosError } from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
-import { OrgsAPI, PaymentsAPI } from '../../lib/queries';
+import { PaymentsAPI } from '../../lib/queries';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { fmtMoney } from '../../lib/utils';
 
-type Plan = 'starter' | 'growth';
+type Plan = 'pro' | 'plus';
 
 export function OrganizerStart() {
   const [searchParams] = useSearchParams();
   const [plan, setPlan] = useState<Plan>(
-    searchParams.get('plan') === 'growth' ? 'growth' : 'starter',
+    searchParams.get('plan') === 'plus' ? 'plus' : 'pro',
   );
   const [organizationName, setOrganizationName] = useState('');
   const [cardNumber, setCardNumber] = useState('4242 4242 4242 4242');
   const { refreshUser, user } = useAuth();
-  const paymentOrderKey = `ef.organizer.${user?.id ?? 'user'}.order`;
+  const paymentOrderKey = `ef.organizer.${user?.id ?? 'user'}.order.v2`;
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(() =>
     sessionStorage.getItem(paymentOrderKey),
   );
@@ -31,11 +31,6 @@ export function OrganizerStart() {
       const name = organizationName.trim();
       if (!name) throw new Error('Enter your organization name.');
 
-      if (plan === 'starter') {
-        await OrgsAPI.create({ name, description: '' });
-        return;
-      }
-
       const digits = cardNumber.replace(/\D/g, '');
       if (digits.length < 4) throw new Error('Enter a sandbox test card.');
       let orderId: string;
@@ -44,6 +39,7 @@ export function OrganizerStart() {
       } else {
         const intent = await PaymentsAPI.createIntent({
           purpose: 'subscription',
+          plan,
           organization_name: name,
         });
         orderId = intent.order_id;
@@ -80,25 +76,25 @@ export function OrganizerStart() {
       <div className="mx-auto max-w-2xl text-center">
         <p className="text-xs font-semibold uppercase tracking-widest text-brand-600">Become an organizer</p>
         <h1 className="font-display mt-2 text-4xl font-semibold text-ink-900">Choose your workspace plan</h1>
-        <p className="mt-3 text-ink-500">Starter is free. Growth is ₹6,499 per month; sandbox checkout simulates the first payment without auto-renewal or a real charge.</p>
+        <p className="mt-3 text-ink-500">Choose Pro at ₹999/month or Plus at ₹2,499/month. Sandbox checkout simulates the first payment without auto-renewal or a real charge.</p>
       </div>
 
       <div className="mx-auto mt-8 grid max-w-3xl gap-4 md:grid-cols-2">
         <PlanCard
-          name="Starter"
-          price="Free"
-          description="For community meetups"
-          selected={plan === 'starter'}
-          onChoose={() => setPlan('starter')}
+          name="Pro"
+          price={`${fmtMoney(999)}/month`}
+          description="For community organizers"
+          selected={plan === 'pro'}
+          onChoose={() => setPlan('pro')}
           disabled={Boolean(paymentOrderId)}
           features={['Up to 100 attendees per event', 'QR check-in', 'Basic analytics']}
         />
         <PlanCard
-          name="Growth"
-          price={`${fmtMoney(6499)}/month`}
-          description="For clubs and studios"
-          selected={plan === 'growth'}
-          onChoose={() => setPlan('growth')}
+          name="Plus"
+          price={`${fmtMoney(2499)}/month`}
+          description="For growing clubs and studios"
+          selected={plan === 'plus'}
+          onChoose={() => setPlan('plus')}
           disabled={Boolean(paymentOrderId)}
           features={['Unlimited attendees', 'Custom branding', 'Staff roles and permissions', 'Priority support']}
         />
@@ -124,40 +120,36 @@ export function OrganizerStart() {
           />
         </div>
 
-        {plan === 'growth' && (
-          <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50 p-4">
-            <div className="flex items-start gap-3">
-              <CreditCard className="mt-0.5 h-5 w-5 text-brand-600" />
-              <div className="flex-1">
-                <p className="font-semibold text-ink-900">Sandbox subscription payment</p>
-                <p className="mt-1 text-sm text-ink-600">
-                  {fmtMoney(6499)} per month · INR only · no real charge.
+        <div className="mt-5 rounded-xl border border-brand-100 bg-brand-50 p-4">
+          <div className="flex items-start gap-3">
+            <CreditCard className="mt-0.5 h-5 w-5 text-brand-600" />
+            <div className="flex-1">
+              <p className="font-semibold text-ink-900">Sandbox subscription payment</p>
+              <p className="mt-1 text-sm text-ink-600">
+                {fmtMoney(plan === 'pro' ? 999 : 2499)} per month · INR only · no real charge.
+              </p>
+              <div className="mt-3 max-w-md">
+                <Input
+                  label="Sandbox card number"
+                  value={cardNumber}
+                  inputMode="numeric"
+                  onChange={(event) => setCardNumber(event.target.value)}
+                />
+                <p className="mt-2 text-xs text-ink-500">
+                  Use a card ending in 4242 to succeed or 0002 to simulate a decline.
                 </p>
-                <div className="mt-3 max-w-md">
-                  <Input
-                    label="Sandbox card number"
-                    value={cardNumber}
-                    inputMode="numeric"
-                    onChange={(event) => setCardNumber(event.target.value)}
-                  />
-                  <p className="mt-2 text-xs text-ink-500">
-                    Use a card ending in 4242 to succeed or 0002 to simulate a decline.
-                  </p>
-                </div>
               </div>
             </div>
           </div>
-        )}
+        </div>
 
         <div className="mt-6 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <p className="flex items-center gap-2 text-xs text-ink-500">
             <ShieldCheck className="h-4 w-4 text-emerald-600" />
-            {plan === 'growth'
-              ? 'Growth admin access is enabled only after successful payment.'
-              : 'Starter creates a free organization admin workspace.'}
+            {`${plan === 'pro' ? 'Pro' : 'Plus'} admin access is enabled only after successful payment.`}
           </p>
           <Button type="submit" loading={activate.isPending}>
-            {plan === 'growth' ? `Pay ${fmtMoney(6499)} and start` : 'Create free workspace'}
+            {`Pay ${fmtMoney(plan === 'pro' ? 999 : 2499)} and start`}
           </Button>
         </div>
       </form>

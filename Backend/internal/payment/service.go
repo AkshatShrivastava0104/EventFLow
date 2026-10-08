@@ -15,7 +15,7 @@ type Service struct {
 
 type paymentRepository interface {
 	CreateEventIntent(context.Context, int64, int64, int) (*Intent, error)
-	CreateSubscriptionIntent(context.Context, int64, string) (*Intent, error)
+	CreateSubscriptionIntent(context.Context, int64, string, string) (*Intent, error)
 	Confirm(context.Context, int64, string, bool) (*Confirmation, error)
 	ListOrganizationPayments(context.Context, int64, int64) (*OrganizationPayments, error)
 }
@@ -45,11 +45,15 @@ func (s *Service) CreateIntent(
 		if request.Quantity != 0 && request.Quantity != 1 {
 			return nil, ErrInvalidRequest
 		}
+		plan := strings.ToLower(strings.TrimSpace(request.Plan))
+		if plan != "pro" && plan != "plus" {
+			return nil, ErrInvalidRequest
+		}
 		name, err := validateOrganizationName(request.OrganizationName)
 		if err != nil {
 			return nil, err
 		}
-		return s.repo.CreateSubscriptionIntent(ctx, userID, name)
+		return s.repo.CreateSubscriptionIntent(ctx, userID, plan, name)
 	default:
 		return nil, ErrInvalidRequest
 	}
