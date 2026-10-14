@@ -32,6 +32,72 @@ const CATEGORIES = [
   'Community',
 ];
 
+const MAX_COVER_UPLOAD_SIZE = 900 * 1024;
+const MAX_SOURCE_IMAGE_SIZE = 100 * 1024 * 1024;
+
+async function prepareCoverImage(file: File): Promise<File> {
+  if (file.size <= MAX_COVER_UPLOAD_SIZE) {
+    return file;
+  }
+
+  if (file.type === 'image/gif') {
+    throw new Error(
+      'GIF covers must be under 900 KB to preserve their animation. Choose a smaller GIF or use JPG, PNG, or WEBP.',
+    );
+  }
+
+  const image = await createImageBitmap(file);
+  try {
+    const canvas = document.createElement('canvas');
+    let scale = Math.min(
+      1,
+      1920 / Math.max(image.width, image.height),
+    );
+    let quality = 0.82;
+
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        throw new Error('Your browser could not prepare this image.');
+      }
+
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, 'image/webp', quality);
+      });
+
+      if (!blob) {
+        throw new Error('Your browser could not compress this image.');
+      }
+
+      if (blob.size <= MAX_COVER_UPLOAD_SIZE) {
+        const baseName = file.name.replace(/\.[^.]+$/, '');
+        const extension = blob.type === 'image/webp' ? 'webp' : 'png';
+        return new File([blob], `${baseName}.${extension}`, {
+          type: blob.type,
+          lastModified: file.lastModified,
+        });
+      }
+
+      if (quality > 0.52) {
+        quality -= 0.1;
+      } else {
+        scale *= 0.85;
+        quality = 0.78;
+      }
+    }
+  } finally {
+    image.close();
+  }
+
+  throw new Error(
+    'This image could not be reduced below 900 KB. Please choose a smaller image.',
+  );
+}
+
 const empty = {
   title: '',
   slug: '',
@@ -79,6 +145,9 @@ export function EventEditor() {
     useState<string>('');
 
   const [mediaUploading, setMediaUploading] =
+    useState(false);
+
+  const [mediaPreparing, setMediaPreparing] =
     useState(false);
 
   const {
@@ -254,7 +323,7 @@ export function EventEditor() {
    * ========================================================
    */
 
-  const handleMediaSelect = (
+  const handleMediaSelect = async (
     event: React.ChangeEvent<HTMLInputElement>,
   ) => {
     const file = event.target.files?.[0];
@@ -279,31 +348,40 @@ export function EventEditor() {
       return;
     }
 
-    const maxSize = 100 * 1024 * 1024;
-
-    if (file.size > maxSize) {
-      toast.error(
-        'File size cannot exceed 100 MB.',
-      );
-
+    if (file.size > MAX_SOURCE_IMAGE_SIZE) {
+      toast.error('Source image cannot exceed 100 MB.');
       event.target.value = '';
       return;
     }
 
-    if (mediaPreview) {
-      URL.revokeObjectURL(mediaPreview);
+    setMediaPreparing(true);
+    try {
+      const preparedFile = await prepareCoverImage(file);
+
+      if (mediaPreview) {
+        URL.revokeObjectURL(mediaPreview);
+      }
+
+      setSelectedMedia(preparedFile);
+      setMediaPreview(URL.createObjectURL(preparedFile));
+      setForm((current: any) => ({
+        ...current,
+        cover_media_type: 'image',
+      }));
+
+      if (preparedFile !== file) {
+        toast.success('Large image optimized for upload.');
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : 'Unable to prepare this image for upload.',
+      );
+      event.target.value = '';
+    } finally {
+      setMediaPreparing(false);
     }
-
-    const previewURL =
-      URL.createObjectURL(file);
-
-    setSelectedMedia(file);
-    setMediaPreview(previewURL);
-
-    setForm((current: any) => ({
-      ...current,
-      cover_media_type: 'image',
-    }));
   };
 
   const removeSelectedMedia = () => {
@@ -833,7 +911,8 @@ export function EventEditor() {
   const isSaving =
     save.isPending ||
     publish.isPending ||
-    mediaUploading;
+    mediaUploading ||
+    mediaPreparing;
 
   const rawCurrentMediaURL =
     mediaPreview ||
@@ -1052,7 +1131,7 @@ export function EventEditor() {
                     </span>
 
                     <span className="mt-1 text-xs text-ink-400">
-                      Maximum 100 MB
+                      JPG, PNG, and WEBP images over 900 KB are optimized automatically; GIFs must be under 900 KB
                     </span>
                   </button>
 

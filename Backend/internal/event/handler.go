@@ -417,23 +417,26 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		return
 	}
 
-	/*
-	 * Limit request body size.
-	 *
-	 * Maximum upload size:
-	 * 100 MB.
-	 */
-	const maxUploadSize = 100 << 20
+	const maxFileSize = 900 << 10
+	const maxRequestSize = 1 << 20
 
 	c.Request.Body = http.MaxBytesReader(
 		c.Writer,
 		c.Request.Body,
-		maxUploadSize,
+		maxRequestSize,
 	)
 
 	fileHeader, err := c.FormFile("file")
 
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			c.JSON(http.StatusRequestEntityTooLarge, gin.H{
+				"error": "image size cannot exceed 900 KB",
+			})
+			return
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "file is required",
 		})
@@ -447,9 +450,9 @@ func (h *Handler) UploadEventMedia(c *gin.Context) {
 		return
 	}
 
-	if fileHeader.Size > maxUploadSize {
+	if fileHeader.Size > maxFileSize {
 		c.JSON(http.StatusRequestEntityTooLarge, gin.H{
-			"error": "file size cannot exceed 100 MB",
+			"error": "image size cannot exceed 900 KB",
 		})
 		return
 	}

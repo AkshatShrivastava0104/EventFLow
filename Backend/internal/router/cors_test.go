@@ -29,6 +29,26 @@ func TestLoginPreflightAllowsDeployedVercelOrigin(t *testing.T) {
 	}
 }
 
+func TestEventMediaPreflightAllowsDeployedVercelOrigin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := SetupRouter(nil, &config.Config{}, nil)
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/events/2/media", nil)
+	request.Header.Set("Origin", "https://eventflowak.vercel.app")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "content-type,authorization")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("expected preflight status %d, got %d", http.StatusNoContent, recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Origin"); got != "https://eventflowak.vercel.app" {
+		t.Fatalf("expected preflight to allow deployed origin, got %q", got)
+	}
+}
+
 func TestLoginPreflightAllowsConfiguredOrigin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
