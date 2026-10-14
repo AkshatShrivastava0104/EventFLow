@@ -129,9 +129,23 @@ func (u *cloudinaryMediaUploader) Upload(
 		)
 	}
 
+	return uploadedMediaFromCloudinaryResult(result, mediaType)
+}
+
+func uploadedMediaFromCloudinaryResult(
+	result *uploader.UploadResult,
+	mediaType string,
+) (UploadedMedia, error) {
 	if result == nil {
 		return UploadedMedia{}, errors.New(
 			"cloudinary upload returned no result",
+		)
+	}
+
+	if message := strings.TrimSpace(result.Error.Message); message != "" {
+		return UploadedMedia{}, fmt.Errorf(
+			"cloudinary rejected upload: %s",
+			message,
 		)
 	}
 
