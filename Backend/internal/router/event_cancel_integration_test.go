@@ -460,6 +460,7 @@ func TestCancelEventNotifiesAllAttendees(t *testing.T) {
 	// ==================================================
 
 	claims := jwt.MapClaims{
+		"token_type":   "access",
 		"user_id":      adminID,
 		"email":        "admin-cancel@test.com",
 		"role":         "user",

@@ -276,6 +276,7 @@ func TestOwnerProtectedEventEndpoint(t *testing.T) {
 
 	createToken := func(userID int64) string {
 		claims := jwt.MapClaims{
+			"token_type":   "access",
 			"user_id":      userID,
 			"auth_version": 1,
 			"exp": time.Now().

@@ -345,11 +345,12 @@ func TestPaginationEndpoints(t *testing.T) {
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.MapClaims{
-			"user_id": userID,
-			"email":   "pagination-user@test.com",
-			"role":    "user",
+			"token_type":   "access",
+			"user_id":      userID,
+			"email":        "pagination-user@test.com",
+			"role":         "user",
 			"auth_version": 1,
-			"exp":     time.Now().
+			"exp": time.Now().
 				Add(time.Hour).
 				Unix(),
 		},

@@ -106,6 +106,7 @@ func TestAPIValidation(t *testing.T) {
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.MapClaims{
+			"token_type":   "access",
 			"user_id":      userID,
 			"email":        "validation@test.com",
 			"role":         "user",

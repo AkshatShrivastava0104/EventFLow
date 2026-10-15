@@ -202,6 +202,7 @@ func TestRegisterEventAPI(t *testing.T) {
 	// --------------------------------------------------
 
 	claims := jwt.MapClaims{
+		"token_type":   "access",
 		"user_id":      userID,
 		"email":        "integration@test.com",
 		"role":         "user",

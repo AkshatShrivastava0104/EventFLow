@@ -464,11 +464,12 @@ func TestRegisterFullEventAutomaticallyWaitlistsUser(t *testing.T) {
 	// The authentication middleware validates the JWT's
 	// auth_version against the current database value.
 	claims := jwt.MapClaims{
-		"user_id":     userBID,
-		"email":       "userb@test.com",
-		"role":        "user",
+		"token_type":   "access",
+		"user_id":      userBID,
+		"email":        "userb@test.com",
+		"role":         "user",
 		"auth_version": 1,
-		"exp":         time.Now().Add(time.Hour).Unix(),
+		"exp":          time.Now().Add(time.Hour).Unix(),
 	}
 
 	token := jwt.NewWithClaims(

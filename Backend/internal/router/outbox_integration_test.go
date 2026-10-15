@@ -285,6 +285,7 @@ func TestRegistrationUsesOutboxForNotification(t *testing.T) {
 	// ==================================================
 
 	claims := jwt.MapClaims{
+		"token_type":   "access",
 		"user_id":      userID,
 		"email":        "outbox@test.com",
 		"role":         "user",

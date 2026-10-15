@@ -365,6 +365,7 @@ func TestCancelRegistrationPromotesWaitlistedUser(t *testing.T) {
 	// ==================================================
 
 	claims := jwt.MapClaims{
+		"token_type":   "access",
 		"user_id":      userAID,
 		"email":        "promotion-a@test.com",
 		"role":         "user",

@@ -328,6 +328,7 @@ func TestTicketCreationUsesOutboxForNotification(t *testing.T) {
 	// The authentication middleware validates the JWT's
 	// auth_version against the current database value.
 	claims := jwt.MapClaims{
+		"token_type":   "access",
 		"user_id":      userID,
 		"email":        "ticket-outbox@test.com",
 		"role":         "user",

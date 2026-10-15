@@ -1,7 +1,10 @@
 package config
 
 import (
+	"fmt"
+	"net"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -22,6 +25,7 @@ type Config struct {
 
 	JWTSecret          string
 	CORSAllowedOrigins string
+	TrustedProxies     []string
 
 	CloudinaryCloudName    string
 	CloudinaryAPIKey       string
@@ -52,6 +56,32 @@ func Load() (*Config, error) {
 		CloudinaryAPIKey:       os.Getenv("CLOUDINARY_API_KEY"),
 		CloudinaryAPISecret:    os.Getenv("CLOUDINARY_API_SECRET"),
 		CloudinaryUploadFolder: os.Getenv("CLOUDINARY_UPLOAD_FOLDER"),
+	}
+
+	if len(strings.TrimSpace(cfg.JWTSecret)) < 32 {
+		return nil, fmt.Errorf("JWT_SECRET must be set to a value of at least 32 bytes")
+	}
+
+	cfg.TrustedProxies = []string{"127.0.0.1", "::1"}
+	if configured := strings.TrimSpace(os.Getenv("TRUSTED_PROXIES")); configured != "" {
+		cfg.TrustedProxies = make([]string, 0)
+		for _, proxy := range strings.Split(configured, ",") {
+			proxy = strings.TrimSpace(proxy)
+			if proxy == "" {
+				continue
+			}
+			if net.ParseIP(proxy) == nil {
+				_, network, err := net.ParseCIDR(proxy)
+				if err != nil {
+					return nil, fmt.Errorf("TRUSTED_PROXIES contains invalid IP or CIDR %q", proxy)
+				}
+				prefixLength, _ := network.Mask.Size()
+				if prefixLength == 0 {
+					return nil, fmt.Errorf("TRUSTED_PROXIES must not trust every address: %q", proxy)
+				}
+			}
+			cfg.TrustedProxies = append(cfg.TrustedProxies, proxy)
+		}
 	}
 
 	return cfg, nil

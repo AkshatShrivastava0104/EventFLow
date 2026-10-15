@@ -61,7 +61,7 @@ func NewAuthMiddleware(
 
 		claims, ok := token.Claims.(jwt.MapClaims)
 
-		if !ok {
+		if !ok || claims["token_type"] != accessTokenType {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid token claims",
 			})

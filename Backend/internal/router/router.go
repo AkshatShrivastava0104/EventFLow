@@ -17,6 +17,7 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/payment"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/ratelimit"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/registration"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/stats"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/systemhealth"
@@ -49,9 +50,19 @@ func SetupRouter(
 
 	appEnv := ""
 	configuredOrigins := ""
+	trustedProxies := []string{"127.0.0.1", "::1"}
 	if cfg != nil {
 		appEnv = cfg.AppEnv
 		configuredOrigins = cfg.CORSAllowedOrigins
+		if len(cfg.TrustedProxies) > 0 {
+			trustedProxies = cfg.TrustedProxies
+		}
+	}
+	if err := r.SetTrustedProxies(trustedProxies); err != nil {
+		log.Printf("invalid trusted proxy configuration; forwarded client IPs will not be trusted: %v", err)
+		if err := r.SetTrustedProxies(nil); err != nil {
+			log.Printf("could not disable trusted proxies: %v", err)
+		}
 	}
 
 	r.Use(securityHeaders(appEnv))
@@ -93,6 +104,12 @@ func SetupRouter(
 	// ==================================================
 
 	api := r.Group("/api/v1")
+	api.Use(ratelimit.Middleware(
+		ratelimit.NewRedisCounter(redisClient),
+		"api",
+		100,
+		time.Minute,
+	))
 
 	// ==================================================
 	// Auth
@@ -113,11 +130,18 @@ func SetupRouter(
 		cfg,
 		authRepo,
 	)
+	authRateLimit := ratelimit.Middleware(
+		ratelimit.NewRedisCounter(redisClient),
+		"auth",
+		10,
+		time.Minute,
+	)
 
 	auth.RegisterAuthRoutes(
 		api,
 		authHandler,
 		authMiddleware,
+		authRateLimit,
 	)
 
 	// ==================================================

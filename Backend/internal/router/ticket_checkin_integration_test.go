@@ -410,11 +410,12 @@ func TestTicketAndCheckinFlow(t *testing.T) {
 
 	createToken := func(userID int64, email string) string {
 		claims := jwt.MapClaims{
-			"user_id":     userID,
-			"email":       email,
-			"role":        "user",
+			"token_type":   "access",
+			"user_id":      userID,
+			"email":        email,
+			"role":         "user",
 			"auth_version": 1,
-			"exp":         time.Now().Add(time.Hour).Unix(),
+			"exp":          time.Now().Add(time.Hour).Unix(),
 		}
 
 		token := jwt.NewWithClaims(

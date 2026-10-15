@@ -11,6 +11,11 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+const (
+	accessTokenType  = "access"
+	refreshTokenType = "refresh"
+)
+
 type Service struct {
 	repo *Repository
 	cfg  *config.Config
@@ -175,8 +180,9 @@ func (s *Service) ChangePassword(
 
 func (s *Service) generateAccessToken(user *User) (string, error) {
 	claims := jwt.MapClaims{
-		"user_id": user.ID,
-		"email":   user.Email,
+		"token_type": accessTokenType,
+		"user_id":    user.ID,
+		"email":      user.Email,
 
 		// Platform-level role only.
 		// Organization role is resolved from organization_members.
@@ -206,7 +212,8 @@ func (s *Service) generateRefreshToken(user *User) (string, error) {
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
 	claims := jwt.MapClaims{
-		"user_id": user.ID,
+		"token_type": refreshTokenType,
+		"user_id":    user.ID,
 
 		// Keep the same session version in the
 		// refresh token as well.
@@ -260,7 +267,7 @@ func (s *Service) RefreshAccessToken(
 	}
 
 	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
+	if !ok || claims["token_type"] != refreshTokenType {
 		return nil, apperrors.ErrUnauthorized
 	}
 
