@@ -49,7 +49,7 @@ jobs:
           POSTGRES_DB: eventflow_test
         ports:
           - 5432:5432
-        
+
         options: >-
           --health-cmd "pg_isready -U postgres -d eventflow_test"
           --health-interval 5s
@@ -199,3 +199,75 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-vm:
+    needs: [publish-image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/frontend/role-based-dashboards'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Deploy to Azure VM
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_TAG: sha-${{ github.sha }}
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          envs: IMAGE_TAG
+          script: |
+            set -eu
+            cd ~/EventFLow/Backend
+
+            IMAGE_REPO="ghcr.io/akshatshrivastava0104/eventflow-api"
+            CURRENT_IMAGE_ID=$(docker inspect eventflow_backend --format '{{.Image}}')
+            PREVIOUS_TAG="${IMAGE_REPO}:rollback-${IMAGE_TAG#sha-}"
+
+            echo "Preserving currently running image: $CURRENT_IMAGE_ID"
+            docker image tag "$CURRENT_IMAGE_ID" "$PREVIOUS_TAG"
+
+            export EVENTFLOW_API_IMAGE="${IMAGE_REPO}:${IMAGE_TAG}"
+
+            rollback() {
+              echo "Attempting rollback to preserved image: $PREVIOUS_TAG"
+              export EVENTFLOW_API_IMAGE="$PREVIOUS_TAG"
+
+              if docker compose up -d --no-deps backend; then
+                for i in $(seq 1 15); do
+                  if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
+                    echo "Rollback health check passed"
+                    return 0
+                  fi
+                  sleep 2
+                done
+              fi
+
+              echo "CRITICAL: Rollback health check failed"
+              docker compose ps
+              docker compose logs --tail=100 backend || true
+              return 1
+            }
+
+            docker pull "$EVENTFLOW_API_IMAGE"
+            docker compose up -d --no-deps backend
+
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8080/health >/dev/null; then
+                echo "Deployment health check passed"
+                docker image rm "$PREVIOUS_TAG" || true
+                exit 0
+              fi
+              sleep 2
+            done
+
+            docker compose logs --tail=100 backend || true
+
+            if rollback; then
+              echo "Previous version restored successfully"
+              docker image rm "$PREVIOUS_TAG" || true
+            else
+              echo "Manual recovery required; preserved image tag: $PREVIOUS_TAG"
+            fi
+            exit 1
