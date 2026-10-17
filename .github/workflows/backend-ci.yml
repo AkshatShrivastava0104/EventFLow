@@ -179,7 +179,7 @@ jobs:
           images: ghcr.io/akshatshrivastava0104/eventflow-api
           tags: |
             type=ref,event=branch
-            type=sha,prefix=sha-
+            type=sha,format=long,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/frontend/role-based-dashboards' }}
 
       - name: Log in to GHCR
