@@ -31,6 +31,8 @@ type Config struct {
 	CloudinaryAPIKey       string
 	CloudinaryAPISecret    string
 	CloudinaryUploadFolder string
+
+	MetricsAddr string
 }
 
 func Load() (*Config, error) {
@@ -56,6 +58,12 @@ func Load() (*Config, error) {
 		CloudinaryAPIKey:       os.Getenv("CLOUDINARY_API_KEY"),
 		CloudinaryAPISecret:    os.Getenv("CLOUDINARY_API_SECRET"),
 		CloudinaryUploadFolder: os.Getenv("CLOUDINARY_UPLOAD_FOLDER"),
+
+		MetricsAddr: os.Getenv("METRICS_ADDR"),
+	}
+
+	if strings.TrimSpace(cfg.MetricsAddr) == "" {
+		cfg.MetricsAddr = ":9090"
 	}
 
 	if len(strings.TrimSpace(cfg.JWTSecret)) < 32 {

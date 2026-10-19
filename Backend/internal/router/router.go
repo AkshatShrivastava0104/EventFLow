@@ -12,6 +12,7 @@ import (
 	checkin "github.com/AkshatShrivastava0104/EventFlow/internal/check-in"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/event"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/metrics"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/notification"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/organization"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
@@ -47,6 +48,7 @@ func SetupRouter(
 
 	r.Use(gin.Logger())
 	r.Use(gin.Recovery())
+	r.Use(metrics.Middleware())
 
 	appEnv := ""
 	configuredOrigins := ""

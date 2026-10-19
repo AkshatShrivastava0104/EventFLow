@@ -1,7 +1,7 @@
 # ================================
 # Stage 1: Build
 # ================================
-FROM golang:1.25.5-bookworm AS builder
+FROM golang:1.26.0-bookworm AS builder
 
 WORKDIR /app
 

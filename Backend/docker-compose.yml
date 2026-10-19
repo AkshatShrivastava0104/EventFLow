@@ -1,3 +1,4 @@
+
 services:
   postgres:
     image: postgres:17
@@ -71,7 +72,10 @@ services:
       - eventflow_network
 
   backend:
-    image: ${EVENTFLOW_API_IMAGE:-ghcr.io/akshatshrivastava0104/eventflow-api:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eventflow-api:local
     container_name: eventflow_backend
     restart: unless-stopped
 
@@ -79,6 +83,7 @@ services:
       APP_NAME: ${APP_NAME}
       APP_ENV: ${APP_ENV}
       PORT: ${PORT}
+      METRICS_ADDR: ":9090"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://eventflowak.vercel.app}
 
       DB_HOST: postgres
@@ -123,10 +128,59 @@ services:
     networks:
       - eventflow_network
 
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: eventflow_prometheus
+    restart: unless-stopped
+
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+
+    expose:
+      - "9090"
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    networks:
+      - eventflow_network
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    container_name: eventflow_grafana
+    restart: unless-stopped
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+    expose:
+      - "3000"
+
+    depends_on:
+      - prometheus
+
+    networks:
+      - eventflow_network
+
 networks:
   eventflow_network:
-    driver: bridge
+    external: true
+    name: eventflow_default
 
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,67 @@
+﻿services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: eventflow-api:local
+    container_name: eventflow_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      METRICS_ADDR: ":9090"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    container_name: eventflow_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring_network
+
+  grafana:
+    image: grafana/grafana:12.2.1
+    container_name: eventflow_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring_network
+
+networks:
+  monitoring_network:
+    name: eventflow_default
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:

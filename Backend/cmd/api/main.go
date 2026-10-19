@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	"github.com/AkshatShrivastava0104/EventFlow/internal/cache"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/config"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/database"
+	"github.com/AkshatShrivastava0104/EventFlow/internal/metrics"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/notification"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/outbox"
 	"github.com/AkshatShrivastava0104/EventFlow/internal/queue"
@@ -113,6 +115,22 @@ func main() {
 		redisClient.Client,
 	)
 
+
+	// ==================================================
+	// Private Prometheus metrics server
+	// ==================================================
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", metrics.Handler())
+
+	metricsServer := &http.Server{
+		Addr:              cfg.MetricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       30 * time.Second,
+	}
+
 	// ==================================================
 	// HTTP Server
 	// ==================================================
@@ -129,6 +147,28 @@ func main() {
 	// Start HTTP server
 	// ==================================================
 	serverErr := make(chan error, 1)
+
+	metricsErr := make(chan error, 1)
+
+	go func() {
+		log.Printf("Metrics server listening on %s", cfg.MetricsAddr)
+
+		listener, err := net.Listen("tcp", cfg.MetricsAddr)
+		if err != nil {
+			metricsErr <- err
+			return
+		}
+
+		err = metricsServer.Serve(listener)
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			metricsErr <- err
+			return
+		}
+
+		metricsErr <- nil
+	}()
+
+	
 	go func() {
 		log.Printf("Server running on port %s", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -144,14 +184,24 @@ func main() {
 	signalCtx, stopSignal := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stopSignal()
 
+	
 	select {
 	case err := <-serverErr:
 		if err != nil {
-			log.Fatal("HTTP server failed:", err)
+			log.Printf("HTTP server failed: %v", err)
 		}
+		stopSignal()
+
+	case err := <-metricsErr:
+		if err != nil {
+			log.Printf("Metrics server failed: %v", err)
+		}
+		stopSignal()
+
 	case <-signalCtx.Done():
 		log.Println("Shutdown signal received")
 	}
+
 
 	// ==================================================
 	// Graceful HTTP shutdown
@@ -167,6 +217,17 @@ func main() {
 	} else {
 		log.Println("HTTP server stopped gracefully")
 	}
+
+	
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Metrics server graceful shutdown failed: %v", err)
+		if err := metricsServer.Close(); err != nil {
+			log.Printf("Metrics server force close failed: %v", err)
+		}
+	} else {
+		log.Println("Metrics server stopped gracefully")
+	}
+
 
 	// ==================================================
 	// Stop background workers
